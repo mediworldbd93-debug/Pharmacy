@@ -1739,3 +1739,133 @@ async function apiRemoveStaff(staffUid) {
     return { success: true, message: 'স্টাফ সরানো হয়েছে।' };
   } catch (err) { return { success: false, message: humanizeError(err) }; }
 }
+// ════════════════════════════════════════════════════════════
+// ✅ নতুন — বাল্ক স্টক ইম্পোর্ট (Opening Balance ট্যাব)
+// একই CSV/পেস্ট করা ডেটা থেকে একসাথে দুটো কাজ করে:
+//   ১) ওষুধ মাস্টারে না থাকা ব্র্যান্ড/ডোজ/শক্তি নতুন করে যোগ করে
+//   ২) totalStock > 0 হলে সেটাকে Opening Balance ব্যাচ হিসেবে
+//      inventory + openingEntries দুই জায়গাতেই বসায়
+// runTransaction() না — এটা এককালীন সেটআপ অপারেশন, ভলিউম বেশি হতে
+// পারে (শত-শত row), তাই admin.js-এর bulk-upload-এর প্যাটার্নে chunked
+// batch().commit() ব্যবহার করা হচ্ছে (quota-friendly progress সহ)।
+// নগদ ব্যালান্স স্পর্শ করা হয় না — একক apiSubmitOpeningEntry()-এর
+// 'স্টক' ক্যাটাগরির মতোই আচরণ (শুধু 'নগদ' ক্যাটাগরি cash touch করে)।
+// ════════════════════════════════════════════════════════════
+const BULK_IMPORT_CHUNK_ROWS = 120; // প্রতি chunk-এ সর্বোচ্চ ৩ write/row ধরে ~৩৬০ writes, নিরাপদ মার্জিন
+
+async function apiBulkImportOpeningStock(rows, onProgress) {
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+  try {
+    let done = 0, addedMedCount = 0;
+    const total = rows.length;
+    const seenInThisImport = new Map(); // dupKey -> medId (এই ইমপোর্টের ভেতরেই ডুপ্লিকেট রোধ)
+    const resultMedicines = [];
+    const resultInventory = [];
+    const resultOpeningEntries = [];
+
+    for (let i = 0; i < rows.length; i += BULK_IMPORT_CHUNK_ROWS) {
+      const chunk = rows.slice(i, i + BULK_IMPORT_CHUNK_ROWS);
+      const batch = fbDb.batch();
+
+      for (const row of chunk) {
+        const dupKey = normalizeBrandText(row.brand).toLowerCase() + '|' +
+          row.doseForm.toLowerCase() + '|' +
+          String(row.strength).trim().toLowerCase().replace(/\s+/g, '');
+
+        let medId = seenInThisImport.get(dupKey);
+        let isNewMed = false;
+
+        if (!medId) {
+          const existingDup = findDuplicateMedicine(row.brand, row.doseForm, row.strength, null);
+          if (existingDup) {
+            medId = existingDup.id;
+          } else {
+            medId = genMedicineId(row.brand);
+            isNewMed = true;
+          }
+          seenInThisImport.set(dupKey, medId);
+        }
+
+        if (isNewMed) {
+          const medData = {
+            id: medId, brand: row.brand, generic: row.generic || '', doseForm: row.doseForm,
+            strength: row.strength, manufacturer: row.manufacturer || '', category: '',
+            unit: 'পাতা', reorderLevel: 10, preferredSupplierId: '', preferredRepId: '',
+          };
+          batch.set(userCol('medicines').doc(medId), medData);
+          resultMedicines.push(medData);
+          addedMedCount++;
+        }
+
+        let invRow = resultInventory.find(x => x.medId === medId) || APP_STATE.inventory.find(x => x.medId === medId);
+
+        if (row.totalStock > 0) {
+          const batchId = 'BAT-OB-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+          const newBatch = {
+            batchId, expiry: row.expiryDate || '', stock: row.totalStock,
+            cost: row.costPrice, mrp: row.mrp, sell: row.sellPrice,
+          };
+          const existingBatches = invRow ? [...(invRow.batches || [])] : [];
+          const rawBatches = [...existingBatches, newBatch];
+          const derived = computeInventoryDerivedFields(rawBatches, 10);
+
+          const invFields = {
+            medId, brand: row.brand, doseForm: row.doseForm, strength: row.strength,
+            batches: derived.batches, totalStock: derived.totalStock,
+            costValue: derived.costValue, mrpValue: derived.mrpValue,
+            nearestExpiry: derived.nearestExpiry,
+            sellPrice: row.sellPrice > 0 ? row.sellPrice : (invRow?.sellPrice || 0),
+            status: derived.status,
+          };
+          batch.set(userCol('inventory').doc(medId), invFields, { merge: true });
+
+          if (invRow) Object.assign(invRow, invFields);
+          else { invRow = invFields; resultInventory.push(invRow); }
+
+          const entryId = 'OB-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+          const openingEntry = {
+            entryId, date: todayStr(), category: 'স্টক', description: 'বাল্ক ইম্পোর্ট',
+            amount: round2(row.totalStock * row.costPrice),
+            medicineId: medId, brand: row.brand, qty: row.totalStock,
+            costPrice: row.costPrice, mrp: row.mrp, sellPrice: row.sellPrice,
+            expiryDate: row.expiryDate || '', batchId,
+          };
+          batch.set(userCol('openingEntries').doc(entryId), openingEntry);
+          resultOpeningEntries.push(openingEntry);
+        } else if (isNewMed) {
+          // স্টক শূন্য কিন্তু নতুন ওষুধ — বাকি সব মডিউল ধরে নেয় প্রতিটা
+          // medicine-এর একটা inventory doc আছে, তাই placeholder বসানো হচ্ছে
+          const invFields = {
+            medId, brand: row.brand, doseForm: row.doseForm, strength: row.strength,
+            totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: row.sellPrice || 0,
+            nearestExpiry: '', status: 'out', batches: [],
+          };
+          batch.set(userCol('inventory').doc(medId), invFields, { merge: true });
+          if (!invRow) resultInventory.push(invFields);
+        }
+      }
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        if (err.code === 'resource-exhausted') {
+          return {
+            success: false, quotaExceeded: true, count: done, addedMedCount,
+            medicines: resultMedicines, inventory: resultInventory, openingEntries: resultOpeningEntries,
+            message: `Firestore দৈনিক সীমা শেষ। ${done}/${total} সারি হয়েছে — quota রিসেট হলে (মধ্যরাত, Pacific Time) একই ডেটা আবার পেস্ট করলে ইতিমধ্যে-যোগ-হওয়া ওষুধ স্বয়ংক্রিয়ভাবে স্কিপ হয়ে বাকি অংশ থেকে চলবে।`,
+          };
+        }
+        throw err;
+      }
+      done += chunk.length;
+      if (onProgress) onProgress(done, total);
+    }
+
+    return {
+      success: true, count: done, addedMedCount,
+      medicines: resultMedicines, inventory: resultInventory, openingEntries: resultOpeningEntries,
+    };
+  } catch (err) {
+    return { success: false, message: humanizeError(err) };
+  }
+}
