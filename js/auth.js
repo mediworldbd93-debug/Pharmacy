@@ -43,7 +43,7 @@ function watchUserProfile(user) {
     // করে স্পষ্ট জানিয়ে দেওয়া হচ্ছে। ডেটা/স্ট্যাটাসে কোনো পরিবর্তন হয় না।
     if (!_conflictInviteChecked) {
       _conflictInviteChecked = true;
-      checkConflictingInvite(user);
+      checkConflictingInvite(user, profile);
     }
     handleProfileSnapshot(user, profile);
   }, (err) => showFatalError('প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
@@ -52,12 +52,17 @@ function watchUserProfile(user) {
 // ✅ ফিক্স: collectionGroup('staffInvites') কোয়েরি বাদ — staffInviteLookup
 // কালেকশনে doc ID = lowercase email, তাই O(1) get() দিয়েই lookup হচ্ছে।
 // Rules-এও এখন আর collectionGroup list-rule জটিলতা নেই (দেখুন firestore.rules)।
-async function checkConflictingInvite(user) {
+async function checkConflictingInvite(user, profile) {
   try {
     const emailLower = (user.email || '').toLowerCase();
     const lookupDoc = await fbDb.collection('staffInviteLookup').doc(emailLower).get();
     if (lookupDoc.exists) {
-      toast('আপনার এই ইমেইলে একটা স্টাফ-ইনভাইট পেন্ডিং আছে, কিন্তু এই Google অ্যাকাউন্টে ইতিমধ্যে নিজস্ব ডেটা/অ্যাক্সেস আছে — তাই স্বয়ংক্রিয়ভাবে যুক্ত হয়নি। যিনি ইনভাইট পাঠিয়েছেন তার সাথে যোগাযোগ করুন, অথবা ভিন্ন Google অ্যাকাউন্ট দিয়ে লগইন করুন।', 'w');
+      const invite = lookupDoc.data();
+      const isStaffReinvite = profile?.status === 'staff'
+        && profile.memberOfOwnerUid === invite.ownerUid;
+      if (!isStaffReinvite) {
+        toast('আপনার এই ইমেইলে একটা স্টাফ-ইনভাইট পেন্ডিং আছে, কিন্তু এই Google অ্যাকাউন্টে ইতিমধ্যে নিজস্ব ডেটা/অ্যাক্সেস আছে — তাই স্বয়ংক্রিয়ভাবে যুক্ত হয়নি। যিনি ইনভাইট পাঠিয়েছেন তার সাথে যোগাযোগ করুন, অথবা ভিন্ন Google অ্যাকাউন্ট দিয়ে লগইন করুন।', 'w');
+      }
     }
   } catch (err) {
     console.warn('Conflicting invite check ব্যর্থ (নিরাপদে উপেক্ষা করা হলো):', err);
@@ -118,16 +123,20 @@ async function handleFirstLogin(user, ref) {
 // ✅ profile snapshot এলে — staff না owner অনুযায়ী দুই ভিন্ন পথে dispatch
 function handleProfileSnapshot(user, profile) {
   if (profile.status === 'staff' && profile.memberOfOwnerUid) {
-    APP_STATE.isStaffMember = true;
-    APP_STATE.staffRole = profile.memberRole;
-    APP_STATE.tenantUid = profile.memberOfOwnerUid;
-    APP_STATE.isAdmin = false;
+    resolveExistingStaffRoster(user, profile).then((activeProfile) => {
+      APP_STATE.isStaffMember = true;
+      APP_STATE.staffRole = activeProfile.memberRole;
+      APP_STATE.tenantUid = activeProfile.memberOfOwnerUid;
+      APP_STATE.isAdmin = false;
 
-    if (tenantOwnerUnsub) tenantOwnerUnsub();
-    tenantOwnerUnsub = fbDb.collection('users').doc(profile.memberOfOwnerUid).onSnapshot((ownerSnap) => {
-      if (!ownerSnap.exists) return;
-      applyTenantStatus(profile, ownerSnap.data());
-    }, (err) => showFatalError('মালিকের প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
+      if (tenantOwnerUnsub) tenantOwnerUnsub();
+      tenantOwnerUnsub = fbDb.collection('users').doc(activeProfile.memberOfOwnerUid).onSnapshot((ownerSnap) => {
+        if (!ownerSnap.exists) return;
+        applyTenantStatus(activeProfile, ownerSnap.data());
+      }, (err) => showFatalError('মালিকের প্রোফাইল শোনার সময় সমস্যা:\n' + err.message));
+    }).catch((err) => {
+      showFatalError('স্টাফ অ্যাক্সেস যাচাই করতে সমস্যা:\n' + err.message, err);
+    });
     return;
   }
 
@@ -135,6 +144,56 @@ function handleProfileSnapshot(user, profile) {
   APP_STATE.staffRole = null;
   APP_STATE.tenantUid = user.uid;
   applyUserProfile(user, profile);
+}
+
+async function resolveExistingStaffRoster(user, profile) {
+  const ownerUid = profile.memberOfOwnerUid;
+  const staffRef = fbDb.collection('users').doc(ownerUid).collection('staff').doc(user.uid);
+  const rosterSnap = await staffRef.get();
+
+  if (rosterSnap.exists) {
+    const roster = rosterSnap.data();
+    if (roster.status !== 'active' || !['manager', 'cashier'].includes(roster.role)) {
+      throw new Error('আপনার স্টাফ অ্যাক্সেস নিষ্ক্রিয়। মালিকের সাথে যোগাযোগ করুন।');
+    }
+    return { ...profile, memberRole: roster.role };
+  }
+
+  const emailLower = (user.email || '').toLowerCase();
+  const lookupRef = fbDb.collection('staffInviteLookup').doc(emailLower);
+  const lookupSnap = await lookupRef.get();
+  if (!lookupSnap.exists) {
+    throw new Error('স্টাফ রোস্টারে আপনার অ্যাক্সেস নেই। মালিককে আবার invite পাঠাতে বলুন।');
+  }
+
+  const invite = lookupSnap.data();
+  if (invite.ownerUid !== ownerUid || !['manager', 'cashier'].includes(invite.role)) {
+    throw new Error('নতুন invite-টি আগের ফার্মেসির সাথে মেলে না। মালিকের সাথে যোগাযোগ করুন।');
+  }
+
+  const rosterEntry = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || '',
+    role: invite.role,
+    status: 'active',
+    joinedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  const batch = fbDb.batch();
+  batch.set(staffRef, rosterEntry);
+  try {
+    await batch.commit();
+  } catch (err) {
+    // একই account একাধিক device-এ লগইন করলে অন্য session আগে roster তৈরি করতে পারে।
+    const latestRoster = await staffRef.get();
+    if (!latestRoster.exists || latestRoster.data().status !== 'active') throw err;
+    rosterEntry.role = latestRoster.data().role;
+  }
+
+  await lookupRef.delete().catch(err => console.warn('Staff invite lookup cleanup ব্যর্থ:', err));
+  await fbDb.collection('users').doc(ownerUid).collection('staffInvites').doc(emailLower)
+    .delete().catch(err => console.warn('Staff invite cleanup ব্যর্থ:', err));
+  return { ...profile, memberRole: rosterEntry.role };
 }
 
 // ✅ staff-এর readOnly/statusInfo owner-এর trial/subscription থেকে গণনা হয়
