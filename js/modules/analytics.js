@@ -77,7 +77,7 @@ function renderAnalyticsModule() {
         ${FISCAL_MONTHS.map(m => `<option value="${m.value}">${esc(m.label)}</option>`).join('')}
       </select>
     </div>
-    <button id="fy-load-btn" onclick="loadFiscalPeriodData()" class="px-3 py-1.5 text-xs bg-brand hover:bg-blue-700 text-white rounded-lg font-semibold">
+    <button id="fy-load-btn" onclick="loadFiscalPeriodData()" class="px-3 py-1.5 text-xs bg-brand hover:bg-teal-800 text-white rounded-lg font-semibold">
       <i class="fa-solid fa-download mr-1"></i> এই মেয়াদের ডেটা লোড করুন
     </button>
     <span id="fy-load-status" class="text-xs text-slate-400"></span>

@@ -113,7 +113,7 @@ function renderPlanCard(plan, isRenewal) {
     <div class="relative rounded-xl border-2 ${plan.badge ? 'border-brand shadow-lg shadow-brand/10' : 'border-slate-200 dark:border-slate-600'}
                 p-4 pt-5 transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl bg-white dark:bg-slate-900/40">
       ${plan.badge ? `
-        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-brand to-blue-500 text-white
+        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-brand to-teal-500 text-white
                      text-[10px] font-bold px-3 py-1 rounded-full whitespace-nowrap shadow">
           ${esc(plan.badge)}
         </span>` : ''}

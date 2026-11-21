@@ -355,10 +355,10 @@ function renderDashboardModule() {
       </h5>
       <p class="text-[11px] text-slate-400 mb-3">নির্দিষ্ট মেয়াদের P&L সারসংক্ষেপ দেখতে Analytics-এ যান — cap-এর বাইরের পুরনো ডেটা থাকলে স্বয়ংক্রিয়ভাবে লোড হবে</p>
       <div class="flex flex-wrap gap-2">
-        <button onclick="goToReportPeriod('month')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-blue-700 text-white rounded-lg">
+        <button onclick="goToReportPeriod('month')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-teal-800 text-white rounded-lg">
           <i class="fa-solid fa-calendar-day mr-1"></i> এই মাসের রিপোর্ট
         </button>
-        <button onclick="goToReportPeriod('year')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-blue-700 text-white rounded-lg">
+        <button onclick="goToReportPeriod('year')" class="px-4 py-2 text-sm font-semibold bg-brand hover:bg-teal-800 text-white rounded-lg">
           <i class="fa-solid fa-calendar-days mr-1"></i> এই বছরের রিপোর্ট
         </button>
         <button onclick="goToReportPeriod('custom')" class="px-4 py-2 text-sm font-semibold border border-brand text-brand rounded-lg">

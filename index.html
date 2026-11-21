@@ -52,7 +52,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
-<link rel="stylesheet" href="css/styles.css"/>
+<link rel="stylesheet" href="css/styles.css?v=20261121"/>
 
 <!-- Firebase SDK (compat — script-tag, no build step) -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -61,14 +61,14 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
-<meta name="theme-color" content="#0D1B2A"/>
+<meta name="theme-color" content="#0f766e"/>
 </head>
 
-<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans min-h-screen transition-colors duration-200">
+<body class="bg-[#f3f8f6] dark:bg-[#0f1b19] text-slate-800 dark:text-slate-100 font-sans min-h-screen transition-colors duration-200">
 
 <!-- ══ LOADING SCREEN ══ -->
 <div id="app-loading" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center
-     bg-gradient-to-br from-slate-900 via-blue-950 to-blue-800 transition-opacity duration-500">
+     bg-gradient-to-br from-slate-950 via-teal-950 to-emerald-800 transition-opacity duration-500">
   <div class="boot-logo w-20 h-20 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center mb-6">
     <i class="fa-solid fa-pills text-3xl text-white"></i>
   </div>
@@ -82,7 +82,7 @@
 
 <!-- ══ LOGIN SCREEN ══ -->
 <div id="screen-login" class="hidden fixed inset-0 z-[9998] flex flex-col items-center justify-center
-     bg-gradient-to-br from-slate-900 via-blue-950 to-blue-800 p-6">
+     bg-gradient-to-br from-slate-950 via-teal-950 to-emerald-800 p-6">
   <div class="w-20 h-20 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center mb-6">
     <i class="fa-solid fa-pills text-3xl text-white"></i>
   </div>
@@ -102,7 +102,7 @@
 
 <!-- ══ TRIAL EXPIRED SCREEN ══ -->
 <div id="screen-trial-expired" class="hidden fixed inset-0 z-[9998] flex flex-col items-center justify-center
-     bg-gradient-to-br from-slate-900 via-blue-950 to-blue-800 p-6 text-center">
+     bg-gradient-to-br from-slate-950 via-teal-950 to-emerald-800 p-6 text-center">
   <div class="w-20 h-20 rounded-2xl bg-amber-500/20 border-2 border-amber-400/30 flex items-center justify-center mb-6">
     <i class="fa-solid fa-hourglass-end text-3xl text-amber-300"></i>
   </div>
@@ -130,7 +130,7 @@
 
   <!-- ══ SIDEBAR ══ -->
   <aside id="sidebar"
-    class="fixed top-0 left-0 bottom-0 w-64 bg-[#0D1B2A] z-40 -translate-x-full lg:translate-x-0
+    class="fixed top-0 left-0 bottom-0 w-64 bg-[#103b36] z-40 -translate-x-full lg:translate-x-0
            transition-transform duration-300 flex flex-col overflow-y-auto">
     <div class="flex items-center gap-3 px-5 py-5 border-b border-white/10">
       <div class="w-10 h-10 rounded-xl bg-brand flex items-center justify-center flex-shrink-0">
@@ -150,7 +150,7 @@
   </aside>
 
   <!-- ══ HEADER ══ -->
-  <header class="fixed top-0 left-0 lg:left-64 right-0 h-16 bg-white dark:bg-slate-800
+  <header class="app-header fixed top-0 left-0 lg:left-64 right-0 h-16 bg-white dark:bg-slate-800
                   border-b border-slate-200 dark:border-slate-700 z-20 flex items-center
                   justify-between px-4 lg:px-6">
     <div class="flex items-center gap-3 min-w-0">

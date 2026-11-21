@@ -71,7 +71,7 @@ function showPinLockScreen() {
 
   const overlay = document.createElement('div');
   overlay.id = 'pin-lock-overlay';
-  overlay.className = 'fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-blue-800 p-6';
+  overlay.className = 'fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-teal-950 to-emerald-800 p-6';
   overlay.innerHTML = `
     <div class="w-16 h-16 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center mb-5">
       <i class="fa-solid fa-lock text-2xl text-white"></i>

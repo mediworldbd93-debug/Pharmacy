@@ -112,7 +112,7 @@ function renderPOSModule() {
       </div>
 
       <div class="space-y-4">
-        <div class="bg-[#0D1B2A] rounded-xl p-5 text-white">
+        <div class="bg-[#103b36] rounded-xl p-5 text-white">
           <h6 class="text-[11px] uppercase tracking-wider text-white/40 mb-3">বিল সারসংক্ষেপ</h6>
           <div class="flex justify-between text-sm py-1.5 border-b border-white/10"><span class="text-white/70">মোট ওষুধ মূল্য</span><span id="bs-med" class="font-mono">৳০.০০</span></div>
           <div class="flex justify-between text-sm py-1.5 border-b border-white/10"><span class="text-white/70">ডিসকাউন্ট</span><span id="bs-disc" class="font-mono">৳০.০০</span></div>

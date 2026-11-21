@@ -371,7 +371,7 @@ function openReceiptModal(type, doc) {
       <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-receipt text-brand mr-1"></i> রিসিট প্রস্তুত</h4>
       <p class="text-xs text-slate-400 mb-4">${esc(config.docLabel)} — ${esc(config.refNo)}</p>
       <div class="flex flex-col gap-2">
-        <button id="receipt-print-btn" class="w-full bg-brand hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm"><i class="fa-solid fa-print mr-1"></i> প্রিন্ট করুন</button>
+        <button id="receipt-print-btn" class="w-full bg-brand hover:bg-teal-800 text-white font-semibold py-2.5 rounded-lg text-sm"><i class="fa-solid fa-print mr-1"></i> প্রিন্ট করুন</button>
         <button id="receipt-share-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-sm"><i class="fa-brands fa-whatsapp mr-1"></i> WhatsApp-এ শেয়ার করুন</button>
         <button onclick="document.getElementById('receipt-modal').remove()" class="w-full border border-slate-300 dark:border-slate-600 rounded-lg py-2 text-sm text-slate-600 dark:text-slate-300">বাদ দিন</button>
       </div>
