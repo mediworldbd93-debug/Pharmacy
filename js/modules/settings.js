@@ -4,6 +4,15 @@
 // SETTINGS MODULE
 // ════════════════════════════════════════════════════════════
 
+const BACKUP_FORMAT = 'mediworldbd-pharma-full-backup';
+const BACKUP_RECORD_CHUNK_SIZE = 30000;
+const BACKUP_COLLECTIONS = [
+  'medicines', 'inventory', 'customers', 'suppliers', 'sales', 'purchases',
+  'returns', 'expenses', 'payments', 'supplierPayments', 'openingEntries',
+  'appSettings', 'cashBalance',
+];
+let pendingBackupImport = null;
+
 function renderSettingsModule() {
   const c = document.getElementById('settings-content');
   if (!c) return;
@@ -100,12 +109,23 @@ function renderSettingsModule() {
         </div>
 
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-file-export text-brand mr-1"></i> ডেটা এক্সপোর্ট</h5>
+          <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"><i class="fa-solid fa-database text-brand mr-1"></i> পূর্ণ ডেটা ব্যাকআপ</h5>
           <button onclick="exportToExcel()" class="btn btn-primary btn-block mb-2">
-            <i class="fa-solid fa-download mr-1"></i> Excel-এ ডাউনলোড করুন
+            <i class="fa-solid fa-file-excel mr-1"></i> Excel ব্যাকআপ (.xlsx)
           </button>
-          <p class="text-[11px] text-slate-400">সব ডেটা একটা .xlsx ফাইলে (প্রতিটা টেবিল আলাদা শিটে)।</p>
+          <button onclick="exportBackupJson()" class="btn btn-secondary btn-block mb-2">
+            <i class="fa-solid fa-file-code mr-1"></i> JSON ব্যাকআপ (.json)
+          </button>
+          <p class="text-[11px] text-slate-400">সব টেবিল ও nested তথ্যসহ — Excel-এ প্রতিটি টেবিল আলাদা শিটে, JSON-এ পূর্ণ রেকর্ড।</p>
           <span id="settings-export-note">${renderLastExportNote()}</span>
+          ${!APP_STATE.isStaffMember ? `
+          <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <label class="block text-xs font-semibold text-slate-500 mb-2">ব্যাকআপ ইমপোর্ট (.xlsx বা .json)</label>
+            <input id="backup-import-file" type="file" accept=".xlsx,.json,application/json"
+              onchange="handleBackupImportFile(this.files?.[0])"
+              class="block w-full text-xs text-slate-500 file:mr-2 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200"/>
+            <div id="backup-import-preview" class="mt-2 text-xs text-slate-500"></div>
+          </div>` : `<p class="text-[11px] text-slate-400 mt-3">ব্যাকআপ ইমপোর্ট শুধু মালিক করতে পারবেন।</p>`}
         </div>
 
         ${!APP_STATE.isStaffMember ? `
@@ -498,9 +518,9 @@ async function removeLogo() {
   }
 }
 
-// ✅ ধাপ ০.৩: এক্সপোর্ট-সফল হওয়ার পর Firestore-এ টাইমস্ট্যাম্প — fire-and-forget,
+// ✅ ধাপ ০.৩: ব্যাকআপ-সফল হওয়ার পর Firestore-এ টাইমস্ট্যাম্প — fire-and-forget,
 // ব্যর্থ হলেও এক্সপোর্ট নিজে (ইতিমধ্যে সফল) আটকাবে না, শুধু রিমাইন্ডার সামান্য stale থাকবে
-async function recordExcelExportTimestamp() {
+async function recordBackupExportTimestamp() {
   APP_STATE.lastExportAt = new Date(); // ✅ optimistic — Settings/Dashboard-এ সাথে সাথে রিফ্লেক্ট
   try {
     await apiSaveSettings({ lastExportAt: firebase.firestore.FieldValue.serverTimestamp() });
@@ -521,30 +541,214 @@ function renderLastExportNote() {
   return `<p class="text-[11px] ${colorClass} mt-2">সর্বশেষ ব্যাকআপ: ${days <= 0 ? 'আজ' : days + ' দিন আগে'}</p>`;
 }
 
-function exportToExcel() {
-  const wb = XLSX.utils.book_new();
-  const sheets = {
-    'Medicines': APP_STATE.medicines,
-    'Inventory': APP_STATE.inventory.map(i => ({ medId: i.medId, brand: i.brand, doseForm: i.doseForm, strength: i.strength, totalStock: i.totalStock, costValue: i.costValue, mrpValue: i.mrpValue, sellPrice: i.sellPrice, nearestExpiry: i.nearestExpiry, status: i.status })),
-    'Customers': APP_STATE.customers,
-    'Suppliers': APP_STATE.suppliers,
-    'Sales': APP_STATE.sales.map(s => ({ invoiceNo: s.invoiceNo, date: s.date, customerName: s.customerName, totalBill: s.totalBill, cashPaid: s.cashPaid, due: s.due, type: s.type, items: JSON.stringify(s.items) })),
-    'Purchases': APP_STATE.purchases.map(p => ({ purchaseId: p.purchaseId, date: p.date, supplierName: p.supplierName, totalCost: p.totalCost, paymentType: p.paymentType, items: JSON.stringify(p.items) })),
-    'Returns': APP_STATE.returns.map(r => ({ returnId: r.returnId, date: r.date, returnType: r.returnType, refId: r.refId, refName: r.refName, amount: r.amount, reason: r.reason || '', refundMethod: r.refundMethod || '' })),
-    'Expenses': APP_STATE.expenses,
-    'Payments': APP_STATE.payments,
-    'SupplierPayments': APP_STATE.supplierPayments,
-    'OpeningEntries': APP_STATE.openingEntries,
+async function getCompleteBackupData() {
+  if (!navigator.onLine) throw new Error('পূর্ণ ব্যাকআপ নিতে ইন্টারনেট সংযোগ দরকার।');
+  const [history, cash] = await Promise.all([
+    apiGetHistoryByPeriod('0001-01-01', '9999-12-31'),
+    apiGetCashBalance(),
+  ]);
+  if (!history.success) throw new Error(history.message || 'লেনদেনের ইতিহাস লোড করা যায়নি।');
+  if (!cash.success) throw new Error(cash.message || 'নগদ ব্যালান্স লোড করা যায়নি।');
+  return {
+    medicines: APP_STATE.medicines || [],
+    inventory: APP_STATE.inventory || [],
+    customers: APP_STATE.customers || [],
+    suppliers: APP_STATE.suppliers || [],
+    sales: history.sales || [],
+    purchases: history.purchases || [],
+    returns: history.returns || [],
+    expenses: history.expenses || [],
+    payments: history.payments || [],
+    supplierPayments: history.supplierPayments || [],
+    openingEntries: APP_STATE.openingEntries || [],
+    appSettings: [{
+      __docId: 'settings',
+      pharmacyName: APP_STATE.pharmacyName || '',
+      ownerName: APP_STATE.ownerName || '',
+      phone: APP_STATE.phone || '',
+      address: APP_STATE.address || '',
+      logoBase64: APP_STATE.logoBase64 || '',
+      lowStockLevel: APP_STATE.lowStockLevel || 10,
+      expiryAlertDays: APP_STATE.expiryAlertDays || 90,
+    }],
+    cashBalance: [{ __docId: 'balances', cashBalance: cash.cashBalance }],
   };
-  Object.entries(sheets).forEach(([name, data]) => {
-    const ws = XLSX.utils.json_to_sheet(data.length ? data : [{}]);
-    XLSX.utils.book_append_sheet(wb, ws, name);
+}
+
+function getBackupFileName(extension) {
+  const pharmacyName = (APP_STATE.pharmacyName || 'pharmacy').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'pharmacy';
+  return `${pharmacyName}_${todayStr()}_backup.${extension}`;
+}
+
+function toBackupWorkbook(data) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+    format: BACKUP_FORMAT,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    pharmacyName: APP_STATE.pharmacyName || '',
+  }]), 'BackupMeta');
+
+  BACKUP_COLLECTIONS.forEach(collection => {
+    const records = data[collection] || [];
+    const rows = records.map(record => {
+      const row = {};
+      Object.entries(record).forEach(([key, value]) => {
+        const cellValue = value && typeof value === 'object' ? JSON.stringify(value) : value;
+        row[key] = typeof cellValue === 'string' && cellValue.length > BACKUP_RECORD_CHUNK_SIZE
+          ? cellValue.slice(0, BACKUP_RECORD_CHUNK_SIZE) + '… [পূর্ণ তথ্য __recordJson কলামে]'
+          : cellValue;
+      });
+      const serialized = JSON.stringify(record);
+      for (let offset = 0, index = 1; offset < serialized.length; offset += BACKUP_RECORD_CHUNK_SIZE, index++) {
+        row[`__recordJson_${index}`] = serialized.slice(offset, offset + BACKUP_RECORD_CHUNK_SIZE);
+      }
+      return row;
+    });
+    const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(rows.length ? rows : [{ __recordJson_1: '' }], { header: headers.length ? headers : ['__recordJson_1'] }),
+      collection
+    );
   });
-  XLSX.writeFile(wb, `${APP_STATE.pharmacyName || 'pharmacy'}_${todayStr()}.xlsx`);
-  toast('Excel ফাইল ডাউনলোড হয়েছে।', 's');
-  recordExcelExportTimestamp(); // ✅ ধাপ ০.৩
+  return workbook;
+}
+
+function updateBackupExportNote() {
   const note = document.getElementById('settings-export-note');
   if (note) note.outerHTML = renderLastExportNote().replace('<p ', '<p id="settings-export-note" ');
+}
+
+async function exportToExcel() {
+  try {
+    const data = await getCompleteBackupData();
+    XLSX.writeFile(toBackupWorkbook(data), getBackupFileName('xlsx'));
+    toast('পূর্ণ Excel ব্যাকআপ ডাউনলোড হয়েছে।', 's');
+    recordBackupExportTimestamp();
+    updateBackupExportNote();
+  } catch (err) {
+    toast('Excel ব্যাকআপ তৈরি ব্যর্থ: ' + humanizeError(err), 'e');
+  }
+}
+
+async function exportBackupJson() {
+  try {
+    const data = await getCompleteBackupData();
+    const backup = {
+      format: BACKUP_FORMAT,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      pharmacyName: APP_STATE.pharmacyName || '',
+      data,
+    };
+    downloadBlob(
+      new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' }),
+      getBackupFileName('json')
+    );
+    toast('পূর্ণ JSON ব্যাকআপ ডাউনলোড হয়েছে।', 's');
+    recordBackupExportTimestamp();
+    updateBackupExportNote();
+  } catch (err) {
+    toast('JSON ব্যাকআপ তৈরি ব্যর্থ: ' + humanizeError(err), 'e');
+  }
+}
+
+function validateBackupData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('ব্যাকআপের data অংশটি সঠিক নয়।');
+  const unknown = Object.keys(data).filter(name => !BACKUP_COLLECTIONS.includes(name));
+  if (unknown.length) throw new Error('ব্যাকআপে অচেনা টেবিল আছে: ' + unknown.join(', '));
+  const normalized = {};
+  BACKUP_COLLECTIONS.forEach(name => {
+    if (!Array.isArray(data[name])) throw new Error(`ব্যাকআপে ${name} টেবিল নেই বা সেটি তালিকা নয়।`);
+    normalized[name] = data[name];
+  });
+  return normalized;
+}
+
+async function parseBackupImportFile(file) {
+  const extension = file.name.split('.').pop().toLowerCase();
+  let data;
+  if (extension === 'json') {
+    const backup = JSON.parse(await file.text());
+    if (backup.format !== BACKUP_FORMAT || Number(backup.version) !== 1) {
+      throw new Error('এই JSON ফাইলটি সমর্থিত MediWorldBD পূর্ণ ব্যাকআপ নয়।');
+    }
+    data = backup.data;
+  } else if (extension === 'xlsx') {
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const metaSheet = workbook.Sheets.BackupMeta;
+    const metadata = metaSheet ? XLSX.utils.sheet_to_json(metaSheet, { defval: '' })[0] : null;
+    if (metadata?.format !== BACKUP_FORMAT || Number(metadata.version) !== 1) {
+      throw new Error('এই Excel ফাইলটি নতুন পূর্ণ ব্যাকআপ ফরম্যাটের নয়। Settings থেকে নতুন ব্যাকআপ নিন।');
+    }
+    data = {};
+    BACKUP_COLLECTIONS.forEach(collection => {
+      const sheet = workbook.Sheets[collection];
+      if (!sheet) throw new Error(`ব্যাকআপে ${collection} শিট নেই।`);
+      data[collection] = XLSX.utils.sheet_to_json(sheet, { defval: '' }).flatMap(row => {
+        const chunks = Object.keys(row)
+          .filter(key => /^__recordJson_\d+$/.test(key))
+          .sort((a, b) => Number(a.slice(13)) - Number(b.slice(13)))
+          .map(key => row[key]);
+        const serialized = chunks.length ? chunks.join('') : row.__recordJson;
+        return serialized ? [JSON.parse(serialized)] : [];
+      });
+    });
+  } else {
+    throw new Error('শুধু .xlsx অথবা .json ব্যাকআপ ফাইল ইমপোর্ট করা যাবে।');
+  }
+  return validateBackupData(data);
+}
+
+async function handleBackupImportFile(file) {
+  pendingBackupImport = null;
+  const preview = document.getElementById('backup-import-preview');
+  if (!preview || !file) return;
+  if (APP_STATE.isStaffMember) return toast('ব্যাকআপ ইমপোর্ট শুধু মালিক করতে পারবেন।', 'w');
+  if (guardReadOnly()) return;
+  if (file.size > 50 * 1024 * 1024) {
+    preview.textContent = 'ফাইলটি ৫০ MB-এর বেশি — ছোট বা ভাগ করা ব্যাকআপ নির্বাচন করুন।';
+    return;
+  }
+
+  preview.textContent = 'ব্যাকআপ যাচাই হচ্ছে...';
+  try {
+    const data = await parseBackupImportFile(file);
+    pendingBackupImport = data;
+    const rows = BACKUP_COLLECTIONS.map(name => `<li>${esc(name)}: ${data[name].length}</li>`).join('');
+    const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + data[name].length, 0);
+    preview.innerHTML = `
+      <p class="mb-1">যাচাইকৃত পূর্ণ ব্যাকআপ: <b>${esc(file.name)}</b> — মোট ${total} রেকর্ড।</p>
+      <p class="mb-2 text-amber-600">খালি ডেটাবেসে restore হবে; আগে থাকা একই ব্যাকআপের রেকর্ড skip হবে। অন্য/পরিবর্তিত ডেটা থাকলে import বন্ধ হবে। কিছু মুছবে বা overwrite হবে না।</p>
+      <ul class="grid grid-cols-2 gap-x-3 mb-3">${rows}</ul>
+      <button type="button" onclick="confirmBackupImport()" class="btn btn-warning btn-sm">ইমপোর্ট নিশ্চিত করুন</button>`;
+  } catch (err) {
+    preview.textContent = 'ব্যাকআপ পড়া যায়নি: ' + humanizeError(err);
+    toast('ব্যাকআপ ফাইল যাচাই ব্যর্থ।', 'e');
+  }
+}
+
+async function confirmBackupImport() {
+  if (!pendingBackupImport || APP_STATE.isStaffMember || guardReadOnly()) return;
+  const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + pendingBackupImport[name].length, 0);
+  if (!confirm(`ব্যাকআপের ${total} রেকর্ড যাচাই হয়েছে। শুধু খালি ডেটাবেসে বা একই ব্যাকআপের অসম্পূর্ণ import পুনরায় যোগ হবে; অন্য/পরিবর্তিত ডেটা থাকলে থামবে। ইমপোর্ট করবেন?`)) return;
+
+  const preview = document.getElementById('backup-import-preview');
+  const updateProgress = progress => {
+    if (preview) preview.textContent = `ইমপোর্ট হচ্ছে: ${progress.processed}/${progress.total} — যোগ ${progress.added}, skip ${progress.skipped}`;
+  };
+  const result = await apiImportBackupRecords(pendingBackupImport, updateProgress);
+  if (!result.success) {
+    if (preview) preview.textContent = `ইমপোর্ট সম্পূর্ণ হয়নি। যোগ ${result.added}, skip ${result.skipped}। ${result.message}`;
+    toast(`ইমপোর্ট আংশিক/ব্যর্থ: ${result.added} যোগ, ${result.skipped} skip। ${result.message}`, 'e');
+    if (result.added) setTimeout(() => location.reload(), 5000);
+    return;
+  }
+
+  pendingBackupImport = null;
+  toast(`ইমপোর্ট সম্পন্ন: ${result.added} নতুন রেকর্ড যোগ, ${result.skipped} duplicate ID skip।`, 's');
+  setTimeout(() => location.reload(), 1500);
 }
 
 function openResetConfirm() {

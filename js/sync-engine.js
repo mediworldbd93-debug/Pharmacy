@@ -235,7 +235,7 @@ function applySyncedMedicineAdd(entry) {
   APP_STATE.medicines.push({
     id: data.id, brand: data.brand, generic: data.generic || '', doseForm: data.doseForm || '',
     strength: data.strength || '', manufacturer: data.manufacturer || '', category: data.category || '',
-    unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
+    unit: data.unit || 'পিস', reorderLevel: parseInt(data.reorderLevel) || 10,
     // ✅ ধাপ ৩৩.২
     preferredSupplierId: data.preferredSupplierId || '', preferredRepId: data.preferredRepId || '',
   });

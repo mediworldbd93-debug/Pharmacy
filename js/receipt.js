@@ -177,7 +177,8 @@ function ensureReceiptPrintStyles() {
       #receipt-print-area, #receipt-print-area * { visibility: visible; }
       #receipt-print-area {
         display: block !important; position: absolute; left: 0; top: 0;
-        width: 80mm; padding: 2mm; font-family: 'JetBrains Mono', monospace;
+        box-sizing: border-box; width: 80mm; max-width: 80mm; padding: 2mm;
+        font-family: 'JetBrains Mono', monospace;
         font-size: 11px; color: #000;
       }
       .r-center { text-align: center; }

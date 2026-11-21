@@ -183,7 +183,7 @@ function openMedicineForm(medId) {
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">একক (Unit)</label>
           <select id="mf-unit" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
-            ${units.map(u => `<option value="${esc(u)}" ${(med?.unit || 'পাতা') === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}
+            ${units.map(u => `<option value="${esc(u)}" ${(med?.unit || 'পিস') === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}
           </select>
         </div>
         <div class="col-span-2">

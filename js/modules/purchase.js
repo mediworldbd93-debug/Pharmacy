@@ -1657,7 +1657,7 @@ async function submitQuickAddMedicine(i) {
 
   try {
     const id = genMedicineId(brand);
-    const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পাতা', reorderLevel });
+    const res = await apiAddMedicine({ id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পিস', reorderLevel });
     if (!res.success) { showErr(res.message); btn.disabled = false; btn.textContent = 'যোগ করে বসান'; return; }
 
     if (res.queued) {
@@ -1668,7 +1668,7 @@ async function submitQuickAddMedicine(i) {
       return;
     }
 
-    const newMed = { id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পাতা', reorderLevel };
+    const newMed = { id, brand, generic, doseForm, strength, manufacturer, category, unit: 'পিস', reorderLevel };
     const invRow = { medId: id, brand, doseForm, strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] };
     APP_STATE.medicines.push(newMed);
     APP_STATE.inventory.push(invRow);

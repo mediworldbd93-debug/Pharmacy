@@ -27,9 +27,14 @@ function renderAccountsModule() {
           <button onclick="setLedgerTab('income')" id="lt-income" class="btn btn-sm"></button>
           <button onclick="setLedgerTab('expense')" id="lt-expense" class="btn btn-sm"></button>
         </div>
-        <button onclick="toggleExpenseForm()" class="btn btn-primary btn-sm">
-          <i class="fa-solid fa-plus"></i> নতুন খরচ যোগ
-        </button>
+        <div class="flex gap-2">
+          <button onclick="exportDailyTransactionReport()" class="btn btn-secondary btn-sm">
+            <i class="fa-solid fa-file-export"></i> Excel রিপোর্ট
+          </button>
+          <button onclick="toggleExpenseForm()" class="btn btn-primary btn-sm">
+            <i class="fa-solid fa-plus"></i> নতুন খরচ যোগ
+          </button>
+        </div>
       </div>
       <div id="expense-form-box" class="hidden mt-4 pt-4 border-t border-slate-200 dark:border-slate-700"></div>
     </div>
@@ -130,6 +135,52 @@ function buildLedgerEntries(dateStr) {
   });
 
   return entries;
+}
+
+async function exportDailyTransactionReport() {
+  const date = document.getElementById('ledger-date')?.value || APP_STATE.ledgerDate || todayStr();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast('রিপোর্টের তারিখ সঠিক নয়।', 'w');
+  if (!navigator.onLine) return toast('সম্পূর্ণ দৈনিক রিপোর্ট ডাউনলোড করতে ইন্টারনেট সংযোগ দরকার।', 'w');
+
+  const button = document.querySelector('[onclick="exportDailyTransactionReport()"]');
+  if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> তৈরি হচ্ছে...'; }
+  try {
+    const result = await apiGetHistoryByPeriod(date, date);
+    if (!result.success) throw new Error(result.message || 'দৈনিক লেনদেন লোড করা যায়নি।');
+
+    const tables = [
+      { name: 'বিক্রয়', rows: result.sales || [], columns: [['ইনভয়েস', 'invoiceNo'], ['তারিখ', 'date'], ['গ্রাহক', 'customerName'], ['পণ্য', 'items'], ['মোট বিল', 'totalBill'], ['নগদ', 'cashPaid'], ['বাকি', 'due']] },
+      { name: 'ক্রয়', rows: result.purchases || [], columns: [['ক্রয় আইডি', 'purchaseId'], ['তারিখ', 'date'], ['সরবরাহকারী', 'supplierName'], ['পণ্য', 'items'], ['মোট খরচ', 'totalCost'], ['পেমেন্ট ধরন', 'paymentType']] },
+      { name: 'রিটার্ন', rows: result.returns || [], columns: [['রিটার্ন আইডি', 'returnId'], ['তারিখ', 'date'], ['ধরন', 'returnType'], ['রেফারেন্স', 'refId'], ['পার্টি', 'refName'], ['পণ্য', 'items'], ['পরিমাণ', 'amount'], ['কারণ', 'reason'], ['রিফান্ড পদ্ধতি', 'refundMethod']] },
+      { name: 'খরচ', rows: result.expenses || [], columns: [['আইডি', 'id'], ['তারিখ', 'date'], ['ক্যাটাগরি', 'category'], ['বিবরণ', 'description'], ['পরিমাণ', 'amount']] },
+      { name: 'বাকি আদায়', rows: result.payments || [], columns: [['পেমেন্ট আইডি', 'paymentId'], ['তারিখ', 'date'], ['গ্রাহক', 'customerName'], ['পরিমাণ', 'amount'], ['নোট', 'note']] },
+      { name: 'সাপ্লায়ার পেমেন্ট', rows: result.supplierPayments || [], columns: [['পেমেন্ট আইডি', 'paymentId'], ['তারিখ', 'date'], ['সরবরাহকারী', 'supplierName'], ['পরিমাণ', 'amount'], ['নোট', 'note']] },
+      { name: 'প্রারম্ভিক এন্ট্রি', rows: (APP_STATE.openingEntries || []).filter(entry => entry.date === date), columns: [['এন্ট্রি আইডি', 'entryId'], ['তারিখ', 'date'], ['ক্যাটাগরি', 'category'], ['বিবরণ', 'description'], ['পরিমাণ', 'amount'], ['পরিমাণ (Qty)', 'qty'], ['ওষুধ আইডি', 'medicineId'], ['গ্রাহক আইডি', 'clientId'], ['সরবরাহকারী আইডি', 'supplierId']] },
+    ];
+    const workbook = XLSX.utils.book_new();
+    const summary = [['লেনদেনের ধরন', 'এন্ট্রি সংখ্যা', 'মোট টাকা']];
+    tables.forEach(table => {
+      const body = table.rows.map(row => table.columns.map(([, key]) => {
+        const value = row[key];
+        return value && typeof value === 'object' ? JSON.stringify(value) : (value ?? '');
+      }));
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([table.columns.map(([label]) => label), ...body]), table.name);
+      const amountKey = table.columns.find(([, key]) => ['totalBill', 'totalCost', 'amount'].includes(key))?.[1];
+      const amountTotal = amountKey
+        ? round2(table.rows.reduce((total, row) => total + (Number(row[amountKey]) || 0), 0))
+        : '';
+      summary.push([table.name, table.rows.length, amountTotal]);
+    });
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['তারিখ', date], ...summary]), 'সারাংশ');
+
+    const safeName = (APP_STATE.pharmacyName || 'pharmacy').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'pharmacy';
+    XLSX.writeFile(workbook, `${safeName}_${date}_transactions.xlsx`);
+    toast('দৈনিক লেনদেনের Excel রিপোর্ট ডাউনলোড হয়েছে।', 's');
+  } catch (err) {
+    toast('দৈনিক রিপোর্ট তৈরি ব্যর্থ: ' + humanizeError(err), 'e');
+  } finally {
+    if (button) { button.disabled = false; button.innerHTML = '<i class="fa-solid fa-file-export"></i> Excel রিপোর্ট'; }
+  }
 }
 
 function renderLedgerTable() {

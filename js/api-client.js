@@ -15,6 +15,138 @@ async function cget(ref) {
   return ref.get();
 }
 
+async function apiImportBackupRecords(recordsByCollection, onProgress) {
+  if (APP_STATE.isStaffMember) return { success: false, message: 'ব্যাকআপ ইমপোর্ট শুধু মালিক করতে পারবেন।' };
+  if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
+
+  const idFields = {
+    medicines: 'id',
+    inventory: 'medId',
+    customers: 'id',
+    suppliers: 'id',
+    sales: 'invoiceNo',
+    purchases: 'purchaseId',
+    returns: 'returnId',
+    expenses: 'id',
+    payments: 'paymentId',
+    supplierPayments: 'paymentId',
+    openingEntries: 'entryId',
+    appSettings: '__docId',
+    cashBalance: '__docId',
+  };
+  const allowed = new Set(Object.keys(idFields));
+  const collections = Object.keys(recordsByCollection || {});
+  if (!collections.length || collections.some(name => !allowed.has(name))) {
+    return { success: false, message: 'ব্যাকআপে অচেনা ডেটা টেবিল আছে।' };
+  }
+  if (collections.some(name => !Array.isArray(recordsByCollection[name]))) {
+    return { success: false, message: 'ব্যাকআপের ডেটা ফরম্যাট সঠিক নয়।' };
+  }
+
+  const total = collections.reduce((sum, name) => sum + recordsByCollection[name].length, 0);
+  let processed = 0, added = 0, skipped = 0;
+  const incomingByCollection = new Map();
+  for (const collectionName of collections) {
+    const idField = idFields[collectionName];
+    const recordsById = new Map();
+    for (const record of recordsByCollection[collectionName]) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        return { success: false, message: `${collectionName} টেবিলে ভুল রেকর্ড আছে।`, added, skipped, processed };
+      }
+      const id = String(record[idField] || '');
+      const expectedPseudoId = collectionName === 'appSettings' ? 'settings' : collectionName === 'cashBalance' ? 'balances' : '';
+      if (!id || id.includes('/') || id.length > 1500 || (expectedPseudoId && id !== expectedPseudoId)) {
+        return { success: false, message: `${collectionName} টেবিলে বৈধ ${idField} নেই।`, added, skipped, processed };
+      }
+      const existing = recordsById.get(id);
+      if (existing && stableBackupStringify(existing) !== stableBackupStringify(record)) {
+        return { success: false, message: `${collectionName} টেবিলে একই ID-এর একাধিক ভিন্ন রেকর্ড আছে।`, added, skipped, processed };
+      }
+      recordsById.set(id, record);
+    }
+    incomingByCollection.set(collectionName, recordsById);
+  }
+
+  const reportProgress = () => {
+    if (typeof onProgress === 'function') onProgress({ total, processed, added, skipped });
+  };
+
+  try {
+    const dataCollections = collections.filter(name => name !== 'appSettings' && name !== 'cashBalance');
+    const snapshots = await Promise.all(dataCollections.map(name => userCol(name).get()));
+    for (let i = 0; i < dataCollections.length; i++) {
+      const collectionName = dataCollections[i];
+      const incomingById = incomingByCollection.get(collectionName);
+      for (const doc of snapshots[i].docs) {
+        const incoming = incomingById.get(doc.id);
+        if (!incoming || stableBackupStringify(doc.data()) !== stableBackupStringify(incoming)) {
+          return {
+            success: false,
+            message: 'এই অ্যাকাউন্টে আলাদা/পরিবর্তিত ডেটা আছে। শুধু খালি অ্যাকাউন্টে বা একই ব্যাকআপের অসম্পূর্ণ import পুনরায় চালানো যাবে।',
+            added, skipped, processed,
+          };
+        }
+      }
+    }
+
+    for (const collectionName of collections) {
+      const idField = idFields[collectionName];
+      const records = recordsByCollection[collectionName];
+
+      for (let i = 0; i < records.length; i += 10) {
+        const results = await Promise.allSettled(records.slice(i, i + 10).map(async record => {
+          const id = String(record[idField] || '');
+
+          const ref = collectionName === 'appSettings'
+            ? userCol('config').doc('settings')
+            : collectionName === 'cashBalance'
+              ? userCol('config').doc('balances')
+              : userCol(collectionName).doc(id);
+          const writeRecord = collectionName === 'appSettings' || collectionName === 'cashBalance'
+            ? Object.fromEntries(Object.entries(record).filter(([key]) => key !== '__docId'))
+            : record;
+          return fbDb.runTransaction(async tx => {
+            const existing = await tx.get(ref);
+            if (existing.exists) return false;
+            tx.set(ref, writeRecord);
+            return true;
+          });
+        }));
+
+        const failed = results.find(result => result.status === 'rejected');
+        results.forEach(result => {
+          processed++;
+          if (result.status === 'fulfilled') {
+            if (result.value) added++;
+            else skipped++;
+          }
+        });
+        reportProgress();
+        if (failed) throw failed.reason;
+      }
+    }
+    return { success: true, added, skipped, processed };
+  } catch (err) {
+    return { success: false, message: humanizeError(err), added, skipped, processed };
+  }
+}
+
+function stableBackupStringify(value) {
+  if (value instanceof Date) return JSON.stringify({ __date: value.toISOString() });
+  if (value && Number.isFinite(value.seconds) && Number.isFinite(value.nanoseconds)) {
+    return JSON.stringify({ __timestamp: value.seconds + ':' + value.nanoseconds });
+  }
+  if (value && typeof value.toDate === 'function') {
+    return JSON.stringify({ __timestamp: value.toDate().toISOString() });
+  }
+  if (Array.isArray(value)) return `[${value.map(stableBackupStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).filter(key => value[key] !== undefined).sort()
+      .map(key => `${JSON.stringify(key)}:${stableBackupStringify(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 // ────────────────────────────────────────────────────────────
 // MEDICINE
 // ────────────────────────────────────────────────────────────
@@ -46,7 +178,7 @@ async function apiAddMedicine(data, opts = {}) {
     batch.set(medRef, {
       id, brand: data.brand || '', generic: data.generic || '', doseForm: data.doseForm || '',
       strength: data.strength || '', manufacturer: data.manufacturer || '', category: data.category || '',
-      unit: data.unit || 'পাতা', reorderLevel: parseInt(data.reorderLevel) || 10,
+      unit: data.unit || 'পিস', reorderLevel: parseInt(data.reorderLevel) || 10,
       // ✅ ধাপ ৩৩.২ — পছন্দের সরবরাহকারী/প্রতিনিধি, ঐচ্ছিক
       preferredSupplierId: data.preferredSupplierId || '',
       preferredRepId: data.preferredRepId || '',
@@ -1565,7 +1697,7 @@ async function apiImportGlobalMedicine(med) {
     }
 
     const id = 'MED-' + med.brand.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8) + '-' + Date.now();
-    const data = { id, brand: med.brand, generic: med.generic || '', doseForm: med.doseForm || '', strength: med.strength || '', manufacturer: med.manufacturer || '', category: med.category || '', unit: med.unit || 'পাতা', reorderLevel: 10 };
+    const data = { id, brand: med.brand, generic: med.generic || '', doseForm: med.doseForm || '', strength: med.strength || '', manufacturer: med.manufacturer || '', category: med.category || '', unit: med.unit || 'পিস', reorderLevel: 10 };
     await userCol('medicines').doc(id).set(data);
     await userCol('inventory').doc(id).set({ medId: id, brand: data.brand, doseForm: data.doseForm, strength: data.strength, totalStock: 0, costValue: 0, mrpValue: 0, sellPrice: 0, nearestExpiry: '', status: 'out', batches: [] });
     return { success: true, medId: id };
@@ -1793,7 +1925,7 @@ async function apiBulkImportOpeningStock(rows, onProgress) {
           const medData = {
             id: medId, brand: row.brand, generic: row.generic || '', doseForm: row.doseForm,
             strength: row.strength, manufacturer: row.manufacturer || '', category: '',
-            unit: 'পাতা', reorderLevel: 10, preferredSupplierId: '', preferredRepId: '',
+            unit: 'পিস', reorderLevel: 10, preferredSupplierId: '', preferredRepId: '',
           };
           batch.set(userCol('medicines').doc(medId), medData);
           resultMedicines.push(medData);
