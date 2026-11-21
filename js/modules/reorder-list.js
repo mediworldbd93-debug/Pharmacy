@@ -173,15 +173,24 @@ function renderUnassignedBlock(meds) {
   const deletedNote = meds.some(m => m.supplierDeleted)
     ? `<p class="text-[11px] text-amber-600 mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>এর মধ্যে কিছু ওষুধের পূর্বনির্ধারিত সরবরাহকারী মুছে ফেলা হয়েছে — Medicine Master-এ গিয়ে নতুন করে নির্ধারণ করুন।</p>`
     : '';
+  const medsJson = esc(JSON.stringify(meds.map(m => ({
+    medId: m.medId, brand: m.brand, doseForm: m.doseForm, strength: m.strength, status: m.status, totalStock: m.totalStock,
+  }))));
   return `
-    <div class="border-2 border-dashed border-amber-300 dark:border-amber-700 rounded-lg p-4">
+    <div class="border-2 border-dashed border-amber-300 dark:border-amber-700 rounded-lg p-4" data-reorder-group="unassigned">
       <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <h5 class="text-sm font-semibold text-amber-700 dark:text-amber-400">
           <i class="fa-solid fa-triangle-exclamation mr-1"></i> সাপ্লায়ার নির্ধারিত নেই (${meds.length} টি)
         </h5>
-        <button onclick="document.getElementById('reorder-list-modal').remove(); goTab('medicine');" class="text-xs text-brand hover:underline whitespace-nowrap">
-          <i class="fa-solid fa-arrow-right mr-1"></i>Medicine Master-এ গিয়ে নির্ধারণ করুন
-        </button>
+        <div class="flex items-center gap-3">
+          <button type="button" class="reorder-copy-btn text-brand text-xs font-semibold hover:underline whitespace-nowrap"
+            data-title="সাপ্লায়ার নির্ধারিত নেই" data-meds-json="${medsJson}">
+            <i class="fa-solid fa-copy mr-1"></i>কপি করুন (${meds.length} টি)
+          </button>
+          <button onclick="document.getElementById('reorder-list-modal').remove(); goTab('medicine');" class="text-xs text-brand hover:underline whitespace-nowrap">
+            <i class="fa-solid fa-arrow-right mr-1"></i>সাপ্লায়ার নির্ধারণ
+          </button>
+        </div>
       </div>
       ${deletedNote}
       <div class="space-y-1">
@@ -233,8 +242,17 @@ function renderReorderMedRow(m) {
     : `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">স্বল্প (${m.totalStock})</span>`;
   return `
     <div class="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded bg-slate-50 dark:bg-slate-900/30">
-      <span class="text-slate-700 dark:text-slate-200 truncate">${esc(m.brand)} ${esc(m.doseForm || '')} ${esc(m.strength || '')}</span>
-      ${statusBadge}
+      <span class="text-slate-700 dark:text-slate-200 truncate min-w-0">${esc(m.brand)} ${esc(m.doseForm || '')} ${esc(m.strength || '')}</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        ${statusBadge}
+        <label class="flex items-center gap-1 text-[10px] text-slate-500">
+          <span>কত পিস</span>
+          <input type="number" min="1" step="1" inputmode="numeric" placeholder="০"
+            aria-label="${esc(m.brand)} কত পিস লাগবে"
+            data-med-id="${esc(m.medId)}"
+            class="reorder-qty-input w-16 px-1.5 py-1 text-xs text-right border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-white">
+        </label>
+      </div>
     </div>`;
 }
 
@@ -242,18 +260,31 @@ function renderReorderMedRow(m) {
 // COPY — Bengali টেক্সট বানিয়ে clipboard-এ (contact.js-এর copyToClipboardWithToast reuse)
 // ────────────────────────────────────────────────────────────
 function buildReorderMessageText(title, meds) {
-  const lines = meds.map((m, i) =>
-    `${i + 1}. ${m.brand} ${m.doseForm || ''} ${m.strength || ''} — ${m.status === 'out' ? 'স্টক শেষ' : `স্টক কম (${m.totalStock})`}`
-  );
+  const lines = meds.map((m, i) => {
+    const name = [m.brand, m.doseForm, m.strength].filter(Boolean).join(' ');
+    return `${i + 1}. ${name} — ${m.qty ? `${m.qty} পিস` : '_____ পিস'}`;
+  });
   const pharmacyName = APP_STATE.pharmacyName || 'ফার্মেসি';
-  return `${pharmacyName} থেকে রি-অর্ডার অনুরোধ (${title}):\n\n${lines.join('\n')}\n\nঅনুগ্রহ করে সরবরাহের ব্যবস্থা করুন। ধন্যবাদ।`;
+  return `${pharmacyName} — ${title}\n${lines.join('\n')}`;
+}
+
+function getReorderMedsWithQuantities(group, meds) {
+  const inputs = Array.from(group?.querySelectorAll('.reorder-qty-input') || []);
+  return meds.map(m => {
+    const rawQty = inputs.find(input => input.dataset.medId === String(m.medId))?.value || '';
+    const qty = Number(rawQty);
+    return { ...m, qty: Number.isInteger(qty) && qty > 0 ? qty : '' };
+  });
 }
 
 function wireReorderCopyButtons() {
   document.querySelectorAll('.reorder-copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const title = btn.dataset.title || 'রি-অর্ডার';
-      const meds = parseReorderMedsJson(btn.dataset.medsJson);
+      const meds = getReorderMedsWithQuantities(
+        btn.closest('[data-reorder-group]'),
+        parseReorderMedsJson(btn.dataset.medsJson)
+      );
       const text = buildReorderMessageText(title, meds);
       copyToClipboardWithToast(text, `"${title}" রি-অর্ডার তালিকা`);
     });
