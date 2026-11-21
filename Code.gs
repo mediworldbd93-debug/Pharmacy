@@ -7,7 +7,7 @@ const FS_BASE = 'https://firestore.googleapis.com/v1';
 const OAUTH_SCOPE = 'https://www.googleapis.com/auth/datastore';
 const TRIAL_DAYS = 15;
 const REENGAGEMENT_AFTER_DAYS = 21; // ২.৩ সিদ্ধান্ত
-const FROM_NAME = 'SohojTech Pharmacy';
+const FROM_NAME = 'MediWorldBD Pharma ERP';
 
 // ════════════════════════════════════════════════════════════
 // OAUTH2 — Service Account JWT → Access Token (cached ~58 মিনিট)
@@ -258,7 +258,7 @@ function processUserEmails(user, now) {
 // EMAIL SENDERS — HTML_TEMPLATES-এর ফাংশনগুলো নিজের টেমপ্লেট দিয়ে পূরণ করুন
 // ════════════════════════════════════════════════════════════
 function sendWelcomeEmail(user) {
-  GmailApp.sendEmail(user.email, 'SohojTech Pharmacy-তে স্বাগতম!', '', {
+  GmailApp.sendEmail(user.email, 'MediWorldBD Pharma ERP-তে স্বাগতম!', '', {
     htmlBody: HTML_TEMPLATES.welcome(user),
     name: FROM_NAME,
   });

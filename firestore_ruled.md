@@ -23,7 +23,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         ('role' in request.auth.token && request.auth.token.role == 'owner')
-        || request.auth.token.email == 'nazmul2ahmed@gmail.com'
+        || request.auth.token.email == 'mediworldbd93@gmail.com'
       );
     }
 

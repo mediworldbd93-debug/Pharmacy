@@ -1,40 +1,35 @@
 'use strict';
 
 const APP_CONFIG = {
-  appName: 'SohojTech Pharmacy',
+  appName: 'MediWorldBD Pharma ERP',
   version: '5.1.0-pwa',
 
   firebase: {
-    apiKey: "AIzaSyA7XWSz2nM_24QSabkORPIuJQqRc3IaTFU",
-    authDomain: "sohojtech-pharmacy.firebaseapp.com",
-    projectId: "sohojtech-pharmacy",
-    storageBucket: "sohojtech-pharmacy.firebasestorage.app",
-    messagingSenderId: "405516727183",
-    appId: "1:405516727183:web:044be2b31a7d09f98911fa",
+    apiKey: "AIzaSyCXOLv2PdZNkSv_dYaK7JMdjbfv7XUWjaU",
+    authDomain: "mediworld-pharmacy.firebaseapp.com",
+    projectId: "mediworld-pharmacy",
+    storageBucket: "mediworld-pharmacy.firebasestorage.app",
+    messagingSenderId: "223276559077",
+    appId: "1:223276559077:web:5968d55dc1fa4a88ce820c"
   },
 
-  ADMIN_EMAIL: 'nazmul2ahmed@gmail.com',
-  SUPPORT_PHONE: '+8801346553350',
-  // ⚠️ প্লেসহোল্ডার — আসল বিকাশ/নগদ পার্সোনাল নাম্বার এখানে বসান (SUPPORT_PHONE থেকে আলাদা হতে পারে)
-  PAYMENT_NUMBERS: {
-    bkash: '01346553350',
-    nagad: '01346553350',
-  },
+  ADMIN_EMAIL: 'mediworldbd93@gmail.com',
+  SUPPORT_PHONE: '+8801773991062',
   COMPANY_LINKS: {
-    website: '', // এখানে ওয়েবসাইট URL বসান (থাকলে), না থাকলে খালি রাখুন
-    facebook: 'https://www.facebook.com/profile.php?id=61584743159189', // ফেসবুক পেজ URL
+    website: 'https://mediworldbd.com',
+    facebook: '',
   },
 
   // ✅ আইটেম ৯: About ট্যাবে ক্রস-প্রমোশন — status: 'current' | 'available' | 'coming_soon'
   PRODUCTS: [
     {
-      name: 'SohojTech Pharmacy',
+      name: 'MediWorldBD Pharma ERP',
       description: 'ফার্মেসি ম্যানেজমেন্ট — POS, ইনভেন্টরি, হিসাব, সব একসাথে।',
       status: 'current',
       url: '',
     },
     // ভবিষ্যতে নতুন প্রোডাক্ট এলে এখানে নতুন এন্ট্রি যোগ করুন, যেমন:
-    // { name: 'SohojTech ...', description: '...', status: 'coming_soon', url: '' },
+    // { name: 'MediWorldBD ...', description: '...', status: 'coming_soon', url: '' },
   ],
   TRIAL_DAYS: 15,
 

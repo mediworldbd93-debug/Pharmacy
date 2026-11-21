@@ -175,15 +175,18 @@ async function testAndSaveProviderKey(providerId) {
     };
     await fbDb.collection('users').doc(uid).collection('config').doc('aiSettings').set(patch, { merge: true });
 
+    let resultMessage;
     if (validated) {
-      statusEl.innerHTML = `<span class="text-emerald-600"><i class="fa-solid fa-circle-check mr-1"></i>সফল! Key সচল আছে।</span>`;
+      resultMessage = `<span class="text-emerald-600"><i class="fa-solid fa-circle-check mr-1"></i>সফল! Key সচল আছে।</span>`;
       toast(`${providerId} key সংরক্ষিত ও যাচাই হয়েছে।`, 's');
     } else {
-      statusEl.innerHTML = `<span class="text-red-500"><i class="fa-solid fa-circle-xmark mr-1"></i>ব্যর্থ: ${esc(testResult.message || 'অজানা সমস্যা')}</span>`;
+      resultMessage = `<span class="text-red-500"><i class="fa-solid fa-circle-xmark mr-1"></i>ব্যর্থ: ${esc(testResult.message || 'অজানা সমস্যা')}</span>`;
       toast('Key সংরক্ষণ হয়েছে কিন্তু যাচাই ব্যর্থ — key সঠিক কিনা চেক করুন।', 'w');
     }
     inp.value = '';
-    loadAndRenderAiSettings(); // রিফ্রেশ — নতুন mask/status দেখানোর জন্য
+    await loadAndRenderAiSettings(); // রিফ্রেশ — নতুন mask/status দেখানোর জন্য
+    const refreshedStatusEl = document.getElementById(`ai-key-status-${providerId}`);
+    if (refreshedStatusEl) refreshedStatusEl.innerHTML = resultMessage;
   } catch (err) {
     statusEl.innerHTML = `<span class="text-red-500">সমস্যা: ${esc(humanizeError(err))}</span>`;
   } finally {

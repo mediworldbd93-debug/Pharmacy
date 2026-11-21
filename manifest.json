@@ -1,6 +1,6 @@
 {
-  "name": "SohojTech Pharmacy",
-  "short_name": "SohojTech",
+  "name": "MediWorldBD Pharma ERP",
+  "short_name": "MediWorldBD",
   "description": "ফার্মেসি ম্যানেজমেন্ট PWA",
   "start_url": "./index.html",
   "scope": "./",

@@ -93,7 +93,7 @@ function verifyIdToken(idToken) {
 // মেয়াদ-উত্তীর্ণ — সব ক্ষেত্রেই AI সম্পূর্ণ ব্লকড, owner নিজে হোক বা staff।
 // ✅ sync: js/config.js APP_CONFIG.ADMIN_EMAIL, Firebase_rules.txt isAdmin()-এর
 // সাথে মিলিয়ে রাখতে হবে - যদি কখনো পরিবর্তন হয়
-const AI_ADMIN_EMAIL = 'nazmul2ahmed@gmail.com';
+const AI_ADMIN_EMAIL = 'mediworldbd93@gmail.com';
 
 function ownerHasPaidAccessAi(ownerProfile) {
   if (!ownerProfile) return false;
@@ -434,11 +434,10 @@ ${JSON.stringify(payload.summary)}
 }
 
 // ────────────────────────────────────────────────────────────
-// GEMINI (Updated with gemini-3.6-flash)
+// GEMINI — cost-efficient model for document parsing
 // ────────────────────────────────────────────────────────────
 function callGemini(apiKey, promptConfig) {
-  // লেটেস্ট ফ্লাশ মডেল (gemini-3.6-flash) ব্যবহার করা হলো
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
   // ✅ মাল্টি-পেজ সাপোর্ট — imagesBase64 (অ্যারে) না থাকলে পুরনো
   // singular imageBase64-কেই ১-আইটেমের অ্যারে ধরে নেওয়া হচ্ছে, তাই
@@ -450,7 +449,10 @@ function callGemini(apiKey, promptConfig) {
   const resp = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ contents: [{ parts }] }),
+    payload: JSON.stringify({
+      contents: [{ parts }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
     muteHttpExceptions: true,
   });
 
@@ -525,24 +527,14 @@ function callClaude(apiKey, promptConfig) {
 // ────────────────────────────────────────────────────────────
 // ────────────────────────────────────────────────────────────
 // RESPONSE NORMALIZATION — তিন provider-এর টেক্সট থেকে JSON বের করে parse
-// ✅ টেস্ট-লগিং: raw AI response Executions log-এ দেখার জন্য — সমস্যা
-// নির্ণয়ের পর এই console.log লাইনগুলো সরিয়ে ফেলা উচিত (স্থায়ী রাখার দরকার নেই)
 // ────────────────────────────────────────────────────────────
 function normalizeResponse(task, rawText) {
-  console.log('=== RAW AI RESPONSE (task: ' + task + ') ===');
-  console.log(rawText);
-  console.log('=== RAW AI RESPONSE END ===');
-
-  const cleaned = rawText.replace(/```json|```/g, '').trim();
-  let parsed;
+  const cleaned = rawText.replace(/```(?:json)?\s*/gi, '').trim();
   try {
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    console.log('JSON PARSE ব্যর্থ। cleaned text ছিল:');
-    console.log(cleaned);
-    throw new Error('AI রেসপন্স পার্স করা যায়নি — অপ্রত্যাশিত ফরম্যাট।');
+    return JSON.parse(cleaned);
+  } catch {
+    throw new Error(`AI রেসপন্স JSON ফরম্যাটে ছিল না (${task})।`);
   }
-  return parsed; // { items: [...] } বা { suggestions: [...] } বা { tips: [...] }
 }
 
 function testAiProxyLocally() {

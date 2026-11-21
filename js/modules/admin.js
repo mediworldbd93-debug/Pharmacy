@@ -84,13 +84,13 @@ function renderAdminUserList() {
   };
 
   const actionCell = (u) => {
-    if (u.role === 'owner') return '<span class="text-[11px] text-slate-400">—</span>';
+    // ✅ AI-B: AI অ্যাক্সেস প্যানেল বাটন — admin owner row-সহ সব account-এ
+    // (BYOK/Addon আগে থেকে প্রস্তুত রাখা যায়; AI call-এ entitlement যাচাই হয়)
+    const aiBtn = `<button onclick="openAiAccessModal('${u.uid}')" title="AI অ্যাক্সেস ম্যানেজ করুন" class="text-purple-600 hover:underline text-xs ml-2"><i class="fa-solid fa-robot"></i></button>`;
+    if (u.role === 'owner') return `<div class="flex items-center justify-center">${aiBtn}</div>`;
+
     const es = userEffectiveStatus(u);
     const durOpts = SUB_DURATIONS.map(d => `<option value="${d.days}">${d.label}</option>`).join('');
-    // ✅ AI-B: AI অ্যাক্সেস প্যানেল বাটন — status নির্বিশেষে সব non-owner রো-তে
-    // (BYOK/Addon admin আগে থেকেও প্রস্তুত রাখতে পারবেন, actual ব্যবহার
-    // তখনও ownerHasPaidAccessAi()-এর ওপর নির্ভরশীল — AiProxy.gs দেখুন)
-    const aiBtn = `<button onclick="openAiAccessModal('${u.uid}')" title="AI অ্যাক্সেস ম্যানেজ করুন" class="text-purple-600 hover:underline text-xs ml-2"><i class="fa-solid fa-robot"></i></button>`;
     if (es === 'approved') {
       return `<div class="flex items-center gap-1 justify-center flex-wrap">
         <select id="dur-${u.uid}" class="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700">${durOpts}</select>

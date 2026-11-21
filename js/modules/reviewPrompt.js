@@ -75,7 +75,7 @@ function openReviewPromptModal() {
     dismissReviewPromptPermanently();
     closeAppModal();
     const phone = (APP_CONFIG.SUPPORT_PHONE || '').replace(/[^0-9]/g, '');
-    const msg = encodeURIComponent('আসসালামু আলাইকুম, SohojTech Pharmacy ব্যবহার করে কিছু ফিডব্যাক দিতে চাই।');
+    const msg = encodeURIComponent('আসসালামু আলাইকুম, MediWorldBD Pharma ERP ব্যবহার করে কিছু ফিডব্যাক দিতে চাই।');
     window.open(`https://wa.me/${phone}?text=${msg}`, '_blank', 'noopener');
   });
 

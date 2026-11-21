@@ -63,7 +63,7 @@ function renderContactInfoCard() {
   const phone = APP_CONFIG.SUPPORT_PHONE || '';
   const phoneDigits = phone.replace(/[^0-9]/g, '');
   const email = APP_CONFIG.ADMIN_EMAIL || '';
-  const waMsg = encodeURIComponent('আসসালামু আলাইকুম, আমার SohojTech Pharmacy অ্যাকাউন্ট নিয়ে সহায়তা দরকার।');
+  const waMsg = encodeURIComponent('আসসালামু আলাইকুম, আমার MediWorldBD Pharma ERP অ্যাকাউন্ট নিয়ে সহায়তা দরকার।');
 
   return `
     <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
@@ -89,6 +89,8 @@ function renderContactInfoCard() {
 
 function renderPaymentCard() {
   const pn = APP_CONFIG.PAYMENT_NUMBERS || {};
+  if (!pn.bkash && !pn.nagad) return '';
+
   const row = (label, number, colorClass, bgClass) => `
     <div class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600">
       <div class="flex items-center gap-3 min-w-0">

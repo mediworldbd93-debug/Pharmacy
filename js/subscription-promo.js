@@ -104,7 +104,7 @@ function renderPlanCard(plan, isRenewal) {
   const { perMonth, savePercent } = computePlanEconomics(plan);
   const phone = (APP_CONFIG.SUPPORT_PHONE || '').replace(/[^0-9]/g, '');
   const waMsg = encodeURIComponent(
-    `আসসালামু আলাইকুম, আমি SohojTech Pharmacy-এর "${plan.label}" প্ল্যান ${isRenewal ? 'রিনিউ' : 'সাবস্ক্রাইব'} করতে চাই।`
+    `আসসালামু আলাইকুম, আমি MediWorldBD Pharma ERP-এর "${plan.label}" প্ল্যান ${isRenewal ? 'রিনিউ' : 'সাবস্ক্রাইব'} করতে চাই।`
   );
   const waLink = `https://wa.me/${phone}?text=${waMsg}`;
   const telLink = `tel:${APP_CONFIG.SUPPORT_PHONE || ''}`;
