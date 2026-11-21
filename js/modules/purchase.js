@@ -43,7 +43,7 @@ function renderPurchaseModule() {
           </h5>
           <div class="flex items-center gap-3 flex-wrap">
             <button onclick="openPurInvoiceScanModal()" class="text-xs text-brand hover:underline flex items-center gap-1">
-              <i class="fa-solid fa-camera"></i> AI দিয়ে স্ক্যান করুন
+              <i class="fa-solid fa-camera"></i> OCR + AI দিয়ে স্ক্যান
             </button>
             <button onclick="savePurchaseCartAsDraft()" class="text-xs text-brand hover:underline flex items-center gap-1">
               <i class="fa-solid fa-bookmark"></i> খসড়া সংরক্ষণ করুন
@@ -823,7 +823,7 @@ function openPurInvoiceScanModal() {
   modal.innerHTML = `
     <div class="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
       <h4 class="font-bold text-slate-800 dark:text-white mb-1"><i class="fa-solid fa-camera text-brand mr-1"></i> ইনভয়েস স্ক্যান করুন (AI)</h4>
-      <p class="text-xs text-slate-400 mb-4">একাধিক পেজের ইনভয়েস হলে প্রতিটা পেজের ছবি একটার পর একটা যোগ করুন — সব পেজ একসাথে একবারেই স্ক্যান হবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
+      <p class="text-xs text-slate-400 mb-4">Browser প্রথমে ছবির text পড়বে; text ও ছবি AI-কে পাঠানো হবে। AI ব্যর্থ হলে পরিষ্কার column header মেলা row-গুলো rules দিয়ে draft হবে। একাধিক পেজ একসাথে যোগ করা যাবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
       <div id="pur-scan-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
@@ -851,12 +851,16 @@ function openPurInvoiceScanModal() {
       </div>
       <div id="pur-scan-pages-box" class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3"></div>
       <div id="pur-scan-size-note" class="mb-3"></div>
+      <details id="pur-scan-ocr-details" class="hidden text-xs text-slate-500 mb-3">
+        <summary class="cursor-pointer">Browser OCR-এ পড়া text দেখুন</summary>
+        <pre id="pur-scan-ocr-text" class="mt-2 p-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 dark:bg-slate-900"></pre>
+      </details>
 
       <input type="file" id="pur-scan-file" accept="image/*" capture="environment" class="hidden" onchange="onPurScanFileSelect(event)"/>
 
       <div class="flex gap-2">
         <button id="pur-scan-submit-btn" onclick="runPurInvoiceScan()" class="btn btn-primary flex-1" disabled>
-          <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> স্ক্যান করুন
+          <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> OCR + AI স্ক্যান করুন
         </button>
         <button onclick="closePurScanModal()" class="btn btn-secondary">বাতিল</button>
       </div>
@@ -966,6 +970,198 @@ async function capturePurScanCameraPage() {
   await addPurScanFile(new File([blob], `invoice-page-${_purScanPageIdSeq + 1}.jpg`, { type: 'image/jpeg' }));
 }
 
+let _purScanOcrLibraryPromise = null;
+
+function loadPurScanOcrLibrary() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (_purScanOcrLibraryPromise) return _purScanOcrLibraryPromise;
+
+  _purScanOcrLibraryPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Tesseract) resolve(window.Tesseract);
+      else {
+        _purScanOcrLibraryPromise = null;
+        reject(new Error('Browser OCR লাইব্রেরি লোড হয়নি।'));
+      }
+    };
+    script.onerror = () => {
+      _purScanOcrLibraryPromise = null;
+      reject(new Error('Browser OCR লাইব্রেরি ডাউনলোড করা যায়নি—ইন্টারনেট সংযোগ পরীক্ষা করুন।'));
+    };
+    document.head.appendChild(script);
+  });
+  return _purScanOcrLibraryPromise;
+}
+
+function setPurScanProgress(message) {
+  const btn = document.getElementById('pur-scan-submit-btn');
+  if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> ${esc(message)}`;
+}
+
+async function recognizePurScanPagesWithBrowserOcr() {
+  const Tesseract = await loadPurScanOcrLibrary();
+  let worker;
+  try {
+    worker = await Tesseract.createWorker(['eng', 'ben'], 1, {
+      langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+      logger: (event) => {
+        if (event.status === 'loading language traineddata') {
+          setPurScanProgress('Browser OCR-এর ভাষা ডেটা লোড হচ্ছে...');
+        } else if (event.status === 'recognizing text' && Number.isFinite(event.progress)) {
+          setPurScanProgress(`Browser OCR চলছে (${Math.round(event.progress * 100)}%)...`);
+        }
+      },
+    });
+
+    const pages = [];
+    for (let i = 0; i < _purScanPages.length; i++) {
+      setPurScanProgress(`Browser OCR: পৃষ্ঠা ${i + 1}/${_purScanPages.length}...`);
+      const { data } = await worker.recognize(_purScanPages[i].dataUrl, {}, { blocks: true });
+      pages.push({ text: data.text || '', blocks: data.blocks || [] });
+    }
+    return pages;
+  } finally {
+    if (worker) await worker.terminate();
+  }
+}
+
+function normalizeOcrHeader(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
+}
+
+function parseOcrNumber(text) {
+  const normalized = String(text || '')
+    .replace(/[০-৯]/g, digit => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)))
+    .replace(/[٬,৳]/g, '');
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function getOcrPageLines(blocks) {
+  const lines = [];
+  (blocks || []).forEach(block => (block.paragraphs || []).forEach(paragraph => {
+    (paragraph.lines || []).forEach(line => {
+      const words = (line.words || []).filter(word => word.text && word.bbox)
+        .map(word => ({
+          text: word.text,
+          x: (word.bbox.x0 + word.bbox.x1) / 2,
+          y: (word.bbox.y0 + word.bbox.y1) / 2,
+        }));
+      if (words.length) lines.push({ words, text: words.map(word => word.text).join(' ') });
+    });
+  }));
+  return lines;
+}
+
+function findInvoiceOcrColumns(lines) {
+  const aliases = {
+    product: ['description', 'particular', 'product', 'medicine', 'drug', 'brand', 'item', 'ওষুধ', 'বিবরণ', 'নাম'],
+    batch: ['batchno', 'batch', 'bno', 'ব্যাচ'],
+    expiry: ['expiry', 'expdate', 'exp', 'মেয়াদ'],
+    qty: ['quantity', 'qty', 'qnty', 'পরিমাণ'],
+    unitTp: ['tradeprice', 'unitprice', 'tp', 'rate', 'দর'],
+    vat: ['vat', 'tax', 'ভ্যাট'],
+    mrp: ['mrp', 'মুল্য'],
+    amount: ['lineamount', 'netamount', 'amount', 'amt', 'total', 'value', 'টাকা', 'মোট'],
+  };
+  const normalizedAliases = Object.fromEntries(
+    Object.entries(aliases).map(([key, values]) => [key, values.map(normalizeOcrHeader)])
+  );
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const columns = {};
+    for (const word of lines[lineIndex].words) {
+      const token = normalizeOcrHeader(word.text);
+      for (const [key, values] of Object.entries(normalizedAliases)) {
+        if (!columns[key] && values.includes(token)) columns[key] = word.x;
+      }
+    }
+    if (columns.product != null && columns.qty != null
+      && (columns.unitTp != null || columns.amount != null)) {
+      return { lineIndex, columns };
+    }
+  }
+  return null;
+}
+
+function getOcrCellText(words, columns, key) {
+  const ordered = Object.entries(columns).sort((a, b) => a[1] - b[1]);
+  const index = ordered.findIndex(([column]) => column === key);
+  if (index < 0) return '';
+  const left = index ? (ordered[index - 1][1] + ordered[index][1]) / 2 : -Infinity;
+  const right = index < ordered.length - 1
+    ? (ordered[index][1] + ordered[index + 1][1]) / 2
+    : Infinity;
+  return words.filter(word => word.x >= left && word.x < right).map(word => word.text).join(' ').trim();
+}
+
+function normalizeOcrExpiry(text) {
+  const match = String(text || '').match(/(?:^|\D)(0?[1-9]|1[0-2])[\/.-](\d{2}|\d{4})(?:\D|$)/);
+  if (!match) return '';
+  const year = match[2].length === 2 ? `20${match[2]}` : match[2];
+  return `${String(match[1]).padStart(2, '0')}/${year}`;
+}
+
+function parseInvoiceOcrPage(blocks) {
+  const lines = getOcrPageLines(blocks);
+  const header = findInvoiceOcrColumns(lines);
+  if (!header) return [];
+
+  const items = [];
+  for (const line of lines.slice(header.lineIndex + 1)) {
+    const productText = getOcrCellText(line.words, header.columns, 'product')
+      .replace(/^\s*\d+[\s.)-]*/, '').trim();
+    if (productText.length < 2 || /^(grand\s+)?sub\s*total|^grand\s+total|^total\b/i.test(productText)) continue;
+
+    const qty = parseOcrNumber(getOcrCellText(line.words, header.columns, 'qty'));
+    const amount = header.columns.amount != null
+      ? parseOcrNumber(getOcrCellText(line.words, header.columns, 'amount')) : null;
+    let unitTp = header.columns.unitTp != null
+      ? parseOcrNumber(getOcrCellText(line.words, header.columns, 'unitTp')) : null;
+    const vat = header.columns.vat != null
+      ? parseOcrNumber(getOcrCellText(line.words, header.columns, 'vat')) : null;
+    if (!(qty > 0) || (unitTp == null && amount == null)) continue;
+    if (unitTp == null && amount != null) unitTp = amount / qty;
+
+    const packSize = extractPackSizeFromText(productText) || 1;
+    const lower = productText.toLowerCase();
+    const unitType = /tablet|capsule|tab\b|cap\b|ট্যাবলেট|ক্যাপসুল/i.test(lower) ? 'piece'
+      : /syrup|suspension|drop|injection|bottle|সিরাপ|ড্রপ|ইনজেকশন/i.test(lower) ? 'bottle'
+        : /cream|ointment|gel|মলম|ক্রিম/i.test(lower) ? 'tube' : '';
+
+    items.push({
+      brand: productText,
+      batch_no: header.columns.batch != null ? getOcrCellText(line.words, header.columns, 'batch') || null : null,
+      expiry_date: header.columns.expiry != null
+        ? normalizeOcrExpiry(getOcrCellText(line.words, header.columns, 'expiry')) || null
+        : null,
+      unit_type: unitType,
+      invoiced_qty: qty,
+      base_units_per_pack: packSize,
+      unit_tp: unitTp,
+      unit_vat: vat,
+      mrp: header.columns.mrp != null ? parseOcrNumber(getOcrCellText(line.words, header.columns, 'mrp')) : null,
+      line_total_printed: amount,
+    });
+  }
+  return items;
+}
+
+function parseInvoiceOcrFallback(ocrPages) {
+  const items = [];
+  for (const page of ocrPages) items.push(...parseInvoiceOcrPage(page.blocks));
+  const seen = new Set();
+  return items.filter(item => {
+    const key = `${item.brand.toLowerCase()}|${item.batch_no || ''}|${item.invoiced_qty}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ✅ পেজ-সংখ্যা বদলালে (add/remove) সঠিক tier অনুযায়ী সব পেজ আবার
 // কম্প্রেস করা হয় — প্রতিটা page.file (আসল ফাইল) থেকে, আগের সংকুচিত
 // dataUrl থেকে না — নাহলে বারবার কম্প্রেস করলে কোয়ালিটি ক্রমাগত খারাপ হতো।
@@ -1045,26 +1241,72 @@ async function runPurInvoiceScan() {
   errEl.classList.add('hidden');
   const btn = document.getElementById('pur-scan-submit-btn');
   btn.disabled = true;
-  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI পড়ছে (${_purScanPages.length} পেজ)...`;
+  let ocrPages = [];
+  let ocrError = null;
 
   try {
-    // data URL prefix বাদ — AiProxy.gs raw base64 আশা করে, প্রতিটা পেজের জন্য
+    try {
+      ocrPages = await recognizePurScanPagesWithBrowserOcr();
+    } catch (err) {
+      ocrError = err;
+    }
+
+    const ocrText = ocrPages.map((page, index) =>
+      `পৃষ্ঠা ${index + 1}:\n${page.text}`
+    ).join('\n\n').slice(0, 100000);
+    // OCR text is supplementary; original images are sent too for visual verification.
     const imagesBase64 = _purScanPages.map(p => p.dataUrl.split(',')[1]);
-    const res = await callAiTask('purchaseInvoiceReader', { imagesBase64 });
-    const items = (res.data && res.data.items) || [];
+    let res;
+    try {
+      res = await callAiTask('purchaseInvoiceReader', { imagesBase64, ocrText });
+    } catch (aiError) {
+      const fallbackItems = parseInvoiceOcrFallback(ocrPages);
+      if (!fallbackItems.length) {
+        const ocrDetails = ocrError ? ` Browser OCR-ও চালানো যায়নি: ${ocrError.message}` : '';
+        showPurScanOcrText(ocrPages);
+        throw new Error(`AI স্ক্যান ব্যর্থ হয়েছে: ${aiError.message}। OCR নিয়মে নির্ভরযোগ্য item row পাওয়া যায়নি; হাতে যাচাই করে এন্ট্রি করুন।${ocrDetails}`);
+      }
+
+      applyAiScannedItemsToPurchaseForm(fallbackItems, null);
+      toast(`AI unavailable — Browser OCR-এর column rules থেকে ${fallbackItems.length}টি draft তৈরি হয়েছে। প্রতিটি field যাচাই করে নিন।`, 'w');
+      closePurScanModal();
+      return;
+    }
+
+    const items = Array.isArray(res.data && res.data.items) ? res.data.items : [];
     if (!items.length) {
-      throw new Error('কোনো লাইন-আইটেম শনাক্ত করা যায়নি — ছবিগুলো স্পষ্ট কিনা যাচাই করে আবার চেষ্টা করুন, অথবা ম্যানুয়ালি এন্ট্রি করুন।');
+      const fallbackItems = parseInvoiceOcrFallback(ocrPages);
+      if (!fallbackItems.length) {
+        showPurScanOcrText(ocrPages);
+        throw new Error('AI কোনো line item দেয়নি এবং OCR rules-এ নির্ভরযোগ্য row পাওয়া যায়নি — OCR text যাচাই করে হাতে এন্ট্রি করুন।');
+      }
+      applyAiScannedItemsToPurchaseForm(fallbackItems, null);
+      toast(`AI item সাজাতে পারেনি — Browser OCR-এর column rules থেকে ${fallbackItems.length}টি draft তৈরি হয়েছে। প্রতিটি field যাচাই করে নিন।`, 'w');
+      closePurScanModal();
+      return;
     }
     applyAiScannedItemsToPurchaseForm(items, res.data && res.data.invoice_total);
-    toast(`AI ${_purScanPages.length} পেজ থেকে ${items.length}টা লাইন-আইটেম পড়েছে — প্রতিটা যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, 's');
+    toast(ocrError
+      ? `Browser OCR চালানো যায়নি, তবে AI ${_purScanPages.length} পেজ থেকে ${items.length}টি item পড়েছে। যাচাই করে নিন।`
+      : `Browser OCR ও AI ${_purScanPages.length} পেজ থেকে ${items.length}টি item পড়েছে। প্রতিটি যাচাই করে "ক্রয় নিশ্চিত করুন" চাপুন।`, ocrError ? 'w' : 's');
     closePurScanModal();
   } catch (err) {
     errEl.textContent = humanizeError(err);
     errEl.classList.remove('hidden');
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> স্ক্যান করুন';
+    if (document.getElementById('pur-scan-modal')) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> OCR + AI স্ক্যান করুন';
+    }
   }
+}
+
+function showPurScanOcrText(ocrPages) {
+  const details = document.getElementById('pur-scan-ocr-details');
+  const output = document.getElementById('pur-scan-ocr-text');
+  if (!details || !output || !ocrPages.length) return;
+  output.textContent = ocrPages.map((page, index) => `পৃষ্ঠা ${index + 1}:\n${page.text}`).join('\n\n');
+  details.classList.remove('hidden');
 }
 
 // ✅ AI-প্রাপ্ত brand নাম দিয়ে বিদ্যমান medicine-এ ম্যাচ — AI ডোজ-ফর্ম/শক্তি দেয়
