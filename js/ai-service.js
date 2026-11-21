@@ -1,4 +1,4 @@
-const AI_PROXY_URL = 'https://script.google.com/macros/s/AKfycbw2_dvk8prhdUAit4K2HWYGCfaWTTibRRde7RFMtcQ1ArcNFpbqSs5aMqdvguoj0po-Fg/exec';
+const AI_PROXY_URL = 'https://script.google.com/macros/s/AKfycbyAWeK2mbT9ShJlqMHgsuEFwKERr3PODT3CLtdZxs4xqnmJ0qP5NbquhxhHRlSaRmws8w/exec';
 
 async function callAiTask(task, payload) {
   const user = firebase.auth().currentUser;
