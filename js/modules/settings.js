@@ -108,13 +108,14 @@ function renderSettingsModule() {
           <span id="settings-export-note">${renderLastExportNote()}</span>
         </div>
 
+        ${!APP_STATE.isStaffMember ? `
         <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-red-600 mb-3"><i class="fa-solid fa-trash-can mr-1"></i> সম্পূর্ণ রিসেট</h5>
           <p class="text-[11px] text-slate-500 mb-3">প্র্যাকটিস ডেটা মুছে নতুন করে শুরু করতে চাইলে।</p>
           <button onclick="openResetConfirm()" class="btn btn-danger-outline btn-block">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i> সব ডেটা মুছুন
           </button>
-        </div>
+        </div>` : ''}
 
         <div class="bg-brand/5 border border-brand/20 rounded-xl p-5">
           <h5 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2 flex items-center gap-2"><i class="fa-solid fa-circle-info text-brand"></i> অ্যাপ তথ্য</h5>
@@ -547,6 +548,11 @@ function exportToExcel() {
 }
 
 function openResetConfirm() {
+  if (APP_STATE.isStaffMember) {
+    toast('সম্পূর্ণ রিসেট শুধু মালিক করতে পারবেন।', 'w');
+    return;
+  }
+
   const modal = document.createElement('div');
   modal.id = 'reset-modal';
   modal.className = 'fixed inset-0 z-[9995] bg-black/50 flex items-center justify-center p-4';
@@ -566,6 +572,10 @@ function openResetConfirm() {
 }
 
 async function confirmReset() {
+  if (APP_STATE.isStaffMember) {
+    toast('সম্পূর্ণ রিসেট শুধু মালিক করতে পারবেন।', 'w');
+    return;
+  }
   if (guardReadOnly()) return;
   if (document.getElementById('reset-confirm-input').value.trim() !== 'RESET') {
     toast('ঠিক করে "RESET" লিখুন।', 'w'); return;

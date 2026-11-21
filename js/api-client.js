@@ -1505,6 +1505,9 @@ async function apiGetHistoryByPeriod(fromDate, toDate) {
 
 // ── FULL RESET — সব subcollection মুছে ফেলে, profile/subscription অক্ষুণ্ণ থাকে ──
 async function apiResetAllData() {
+  if (APP_STATE.isStaffMember) {
+    return { success: false, message: 'সম্পূর্ণ রিসেট শুধু মালিক করতে পারবেন।' };
+  }
   if (!navigator.onLine) return { success: false, message: OFFLINE_MSG };
   try {
     const collections = ['medicines', 'inventory', 'customers', 'suppliers', 'sales', 'purchases', 'returns', 'expenses', 'payments', 'supplierPayments', 'openingEntries'];
