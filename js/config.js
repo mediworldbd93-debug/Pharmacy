@@ -2,7 +2,7 @@
 
 const APP_CONFIG = {
   appName: 'MediWorldBD Pharma ERP',
-  version: '5.1.0-pwa',
+  version: '5.2.0-pwa',
 
   firebase: {
     apiKey: "AIzaSyCXOLv2PdZNkSv_dYaK7JMdjbfv7XUWjaU",
