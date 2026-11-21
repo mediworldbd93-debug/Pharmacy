@@ -1,0 +1,4 @@
+[submodule "sohojtech"]
+	path = sohojtech
+	url = https://github.com/mediworldbd93-debug/Pharmacy.git
+	branch = feature/reorder-copy-quantity
