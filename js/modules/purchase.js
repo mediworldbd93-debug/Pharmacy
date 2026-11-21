@@ -805,6 +805,7 @@ function compressInvoiceImageFile(file, tier) {
 let _purScanPages = []; // [{ id, file, dataUrl }] — ক্রম অনুযায়ী পেজ ১, ২, ৩...
 let _purScanPageIdSeq = 0;
 let _purScanRecompressing = false;
+let _purScanCameraStream = null;
 
 function purScanTotalBytes() {
   return _purScanPages.reduce((a, p) => a + (p.dataUrl ? p.dataUrl.length : 0), 0);
@@ -825,13 +826,33 @@ function openPurInvoiceScanModal() {
       <p class="text-xs text-slate-400 mb-4">একাধিক পেজের ইনভয়েস হলে প্রতিটা পেজের ছবি একটার পর একটা যোগ করুন — সব পেজ একসাথে একবারেই স্ক্যান হবে। <b>কিছুই সরাসরি সংরক্ষণ হবে না</b> — যাচাই করে "ক্রয় নিশ্চিত করুন" চাপতেই হবে।</p>
       <div id="pur-scan-error" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs rounded-lg px-3 py-2 mb-3"></div>
 
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        <button type="button" onclick="startPurScanCamera()" class="btn btn-primary">
+          <i class="fa-solid fa-camera mr-1"></i> Webcam দিয়ে ছবি তুলুন
+        </button>
+        <label for="pur-scan-file" class="btn btn-brand-outline cursor-pointer">
+          <i class="fa-solid fa-image mr-1"></i> ছবি তুলুন / ফাইল নিন
+        </label>
+      </div>
+      <p class="text-[11px] text-slate-400 mb-3">PC-তে webcam না থাকলে scanner দিয়ে invoice-এর JPG/PNG ছবি তৈরি করে ফাইল নিন। এরপর AI ছবিটি পড়বে।</p>
+      <div id="pur-scan-camera-box" class="hidden mb-3">
+        <div class="relative overflow-hidden rounded-xl bg-black">
+          <video id="pur-scan-camera-video" autoplay playsinline muted class="block w-full max-h-72 object-contain"></video>
+          <div class="pointer-events-none absolute inset-[8%] rounded-lg border-2 border-dashed border-white/80">
+            <span class="absolute inset-x-0 bottom-2 text-center text-[11px] font-semibold text-white drop-shadow">ইনভয়েসটি ফ্রেমের ভেতর সোজা করে রাখুন</span>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-2">
+          <button type="button" onclick="capturePurScanCameraPage()" class="btn btn-primary flex-1">
+            <i class="fa-solid fa-camera mr-1"></i> পৃষ্ঠা ক্যাপচার
+          </button>
+          <button type="button" onclick="stopPurScanCamera()" class="btn btn-secondary">ক্যামেরা বন্ধ</button>
+        </div>
+      </div>
       <div id="pur-scan-pages-box" class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3"></div>
       <div id="pur-scan-size-note" class="mb-3"></div>
 
       <input type="file" id="pur-scan-file" accept="image/*" capture="environment" class="hidden" onchange="onPurScanFileSelect(event)"/>
-      <label for="pur-scan-file" class="btn btn-brand-outline btn-block cursor-pointer mb-3">
-        <i class="fa-solid fa-plus mr-1"></i> পেজ যোগ করুন
-      </label>
 
       <div class="flex gap-2">
         <button id="pur-scan-submit-btn" onclick="runPurInvoiceScan()" class="btn btn-primary flex-1" disabled>
@@ -846,17 +867,22 @@ function openPurInvoiceScanModal() {
 }
 
 function closePurScanModal() {
+  stopPurScanCamera();
   document.getElementById('pur-scan-modal')?.remove();
   _purScanPages = [];
 }
 
 async function onPurScanFileSelect(event) {
-  const errEl = document.getElementById('pur-scan-error');
-  errEl.classList.add('hidden');
   const file = event.target.files[0];
   event.target.value = ''; // ✅ একই ফাইল আবার সিলেক্ট করলেও change ইভেন্ট ফায়ার হবে
-  if (!file) return;
+  await addPurScanFile(file);
+}
 
+async function addPurScanFile(file) {
+  if (!file) return;
+  const errEl = document.getElementById('pur-scan-error');
+  if (!errEl) return;
+  errEl.classList.add('hidden');
   if (!file.type.startsWith('image/')) {
     errEl.textContent = 'শুধু ছবি ফাইল (JPG/PNG) আপলোড করুন।';
     errEl.classList.remove('hidden');
@@ -865,6 +891,79 @@ async function onPurScanFileSelect(event) {
 
   _purScanPages.push({ id: ++_purScanPageIdSeq, file, dataUrl: null });
   await recompressAllPurScanPages();
+}
+
+async function startPurScanCamera() {
+  const errEl = document.getElementById('pur-scan-error');
+  const cameraBox = document.getElementById('pur-scan-camera-box');
+  const video = document.getElementById('pur-scan-camera-video');
+  if (!errEl || !cameraBox || !video) return;
+  errEl.classList.add('hidden');
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    errEl.textContent = 'এই ব্রাউজারে ক্যামেরা স্ক্যান সমর্থিত নয়। "ছবি তুলুন / আপলোড" ব্যবহার করুন।';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  stopPurScanCamera();
+  try {
+    _purScanCameraStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+      },
+    });
+    video.srcObject = _purScanCameraStream;
+    cameraBox.classList.remove('hidden');
+    await video.play();
+  } catch (err) {
+    stopPurScanCamera();
+    const message = err.name === 'NotAllowedError'
+      ? 'ক্যামেরা ব্যবহারের অনুমতি দিন, অথবা "ছবি তুলুন / আপলোড" ব্যবহার করুন।'
+      : err.name === 'NotFoundError'
+        ? 'কোনো webcam পাওয়া যায়নি। PC scanner দিয়ে JPG/PNG তৈরি করে "ছবি তুলুন / ফাইল নিন" থেকে যোগ করুন।'
+        : `ক্যামেরা চালু করা যায়নি: ${err.message || 'অজানা সমস্যা'}`;
+    errEl.textContent = message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+function stopPurScanCamera() {
+  if (_purScanCameraStream) {
+    _purScanCameraStream.getTracks().forEach(track => track.stop());
+    _purScanCameraStream = null;
+  }
+  const video = document.getElementById('pur-scan-camera-video');
+  if (video) video.srcObject = null;
+  document.getElementById('pur-scan-camera-box')?.classList.add('hidden');
+}
+
+async function capturePurScanCameraPage() {
+  const video = document.getElementById('pur-scan-camera-video');
+  const errEl = document.getElementById('pur-scan-error');
+  if (!video || !errEl || !video.videoWidth || !video.videoHeight) {
+    if (errEl) {
+      errEl.textContent = 'ক্যামেরা প্রস্তুত নয়—একটু অপেক্ষা করে আবার চেষ্টা করুন।';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+  if (!blob) {
+    errEl.textContent = 'ক্যামেরার ছবি তৈরি করা যায়নি—আবার চেষ্টা করুন।';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  await addPurScanFile(new File([blob], `invoice-page-${_purScanPageIdSeq + 1}.jpg`, { type: 'image/jpeg' }));
 }
 
 // ✅ পেজ-সংখ্যা বদলালে (add/remove) সঠিক tier অনুযায়ী সব পেজ আবার
